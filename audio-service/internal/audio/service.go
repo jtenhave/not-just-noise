@@ -1,16 +1,22 @@
 package audio
 
 import (
-	"time"
-
 	"github.com/google/uuid"
 )
 
-type audioService struct{}
+type audioRepo interface {
+	GetAudio(id string) (Audio, error)
+	CreateAudio(audio Audio) error
+}
 
-func NewAudioService() audioService {
-	return audioService{}
+type audioService struct {
+	audioRepo audioRepo
+}
 
+func NewAudioService(audioRepo audioRepo) audioService {
+	return audioService{
+		audioRepo: audioRepo,
+	}
 }
 
 func (audioService audioService) GetAudio(id string) (Audio, error) {
@@ -18,14 +24,12 @@ func (audioService audioService) GetAudio(id string) (Audio, error) {
 	return Audio{}, nil
 }
 
-func (audioService audioService) CreateAudio(audio Audio) (Audio, error) {
+func (audioService audioService) CreateAudio(audio Audio) (string, error) {
 	audio.ID = uuid.New().String()
-	audio.CreatedAt = time.Now()
-	audio.UpdatedAt = time.Now()
 
 	// toDO INSERT IN THE db
 
-	return audio, nil
+	return audio.ID, nil
 }
 
 func (audioService audioService) UpdateAudio(audio Audio) (Audio, error) {

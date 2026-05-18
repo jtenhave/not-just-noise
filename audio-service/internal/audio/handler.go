@@ -12,7 +12,7 @@ import (
 
 type AudioService interface {
 	GetAudio(id string) (Audio, error)
-	CreateAudio(audio Audio) (Audio, error)
+	CreateAudio(audio Audio) (string, error)
 	UpdateAudio(audio Audio) (Audio, error)
 	DeleteAudio(id string) error
 }
@@ -50,7 +50,7 @@ func (audio Audio) ToAudioResponse() AudioResponse {
 	return AudioResponse{
 		ID:        audio.ID,
 		Title:     audio.Title,
-		Creator:   audio.Creator,
+		Creator:   audio.CreatorID,
 		FileURL:   audio.FileURL,
 		CreatedAt: audio.CreatedAt,
 		UpdatedAt: audio.UpdatedAt,
@@ -87,9 +87,9 @@ type CreateAudioRequest struct {
 
 func (createAudioRequest CreateAudioRequest) ToAudio() Audio {
 	return Audio{
-		Title:   createAudioRequest.Title,
-		Creator: createAudioRequest.Creator,
-		FileURL: createAudioRequest.FileURL,
+		Title:     createAudioRequest.Title,
+		CreatorID: createAudioRequest.Creator,
+		FileURL:   createAudioRequest.FileURL,
 	}
 }
 
@@ -121,13 +121,16 @@ func createAudioHandler(request http.Request, audioService AudioService) http.Re
 		return http.CreateErrorResonse(400, strings.Join(errors, ", "))
 	}
 
-	audio := createAudioRequest.ToAudio()
-	audio, err = audioService.CreateAudio(audio)
+	id, err := audioService.CreateAudio(createAudioRequest.ToAudio())
 	if err != nil {
 		return http.CreateErrorResonse(500, fmt.Errorf("Failed to create audio: %w", err).Error())
 	}
 
-	resultJson, err := json.Marshal(audio.ToAudioResponse())
+	response := map[string]string{
+		"id": id,
+	}
+
+	resultJson, err := json.Marshal(response)
 	if err != nil {
 		return http.CreateErrorResonse(500, fmt.Errorf("Failed to marshal create audio response: %w", err).Error())
 	}
@@ -166,9 +169,9 @@ func (updateAudioRequest UpdateAudioRequest) Validate() []string {
 
 func (updateAudioRequest UpdateAudioRequest) ToAudio() Audio {
 	return Audio{
-		Title:   *updateAudioRequest.Title,
-		Creator: *updateAudioRequest.Creator,
-		FileURL: *updateAudioRequest.FileURL,
+		Title:     *updateAudioRequest.Title,
+		CreatorID: *updateAudioRequest.Creator,
+		FileURL:   *updateAudioRequest.FileURL,
 	}
 }
 
