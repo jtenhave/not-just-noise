@@ -1,0 +1,7 @@
+{
+    "host": "njn-mysql-db.c01ycuu8si9t.us-east-1.rds.amazonaws.com",
+    "port": 3306,
+    "db_name": "audio_service",
+    "user": "${DB_USER}",
+    "password": "${DB_PASSWORD}"
+}
