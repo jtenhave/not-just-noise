@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jtenhave/not-just-noise/audio-service/internal/audio"
+	"github.com/jtenhave/not-just-noise/lib/errorcode"
 )
 
 type audioRepo struct {
@@ -28,15 +29,30 @@ func NewAudioRepo(db DB) *audioRepo {
 }
 
 // GetAudio gets an audio record using the given id. Returns the audio record and the first error encountered.
-func (repo *audioRepo) GetAudio(id string) (audio.Audio, error) {
+func (repo *audioRepo) GetAudioByID(id string) (audio.Audio, error) {
 	var dbRows []AudioDBRow
-	err := repo.db.Select(&dbRows, "SELECT id, title, creator, file_url, created_at, updated_at FROM audio WHERE id = ?", id)
+	err := repo.db.Select(&dbRows, "SELECT id, title, creator_id, file_url, created_at, updated_at FROM audio WHERE id = ?", id)
 	if err != nil {
 		return audio.Audio{}, fmt.Errorf("audiorepo: failed to get audio: %w", err)
 	}
 
 	if len(dbRows) == 0 {
-		return audio.Audio{}, fmt.Errorf("audiorepo: audio not found")
+		return audio.Audio{}, errorcode.NewErrorCode(errorcode.NotFound, "audio not found")
+	}
+
+	return dbRows[0].ToAudio(), nil
+}
+
+// GetAudio gets an audio record using the given id. Returns the audio record and the first error encountered.
+func (repo *audioRepo) GetAudioByCreatorIDAndTitle(creatorID string, title string) (audio.Audio, error) {
+	var dbRows []AudioDBRow
+	err := repo.db.Select(&dbRows, "SELECT id, title, creator_id, file_url, created_at, updated_at FROM audio WHERE creator_id = ? AND title = ?", creatorID, title)
+	if err != nil {
+		return audio.Audio{}, fmt.Errorf("audiorepo: failed to get audio by creator id and title: %w", err)
+	}
+
+	if len(dbRows) == 0 {
+		return audio.Audio{}, errorcode.NewErrorCode(errorcode.NotFound, "audio not found")
 	}
 
 	return dbRows[0].ToAudio(), nil
@@ -45,7 +61,7 @@ func (repo *audioRepo) GetAudio(id string) (audio.Audio, error) {
 // CreateAudio creates a new audio record using the given audio a. Returns the first error encountered.
 func (repo *audioRepo) CreateAudio(a audio.Audio) error {
 	dbRow := toAudioDBRow(a)
-	err := repo.db.NamedExec(&dbRow, "INSERT INTO audio (id, title, creator, file_url) VALUES (:id, :title, :creator, :file_url)")
+	err := repo.db.NamedExec(&dbRow, "INSERT INTO audio (id, title, creator_id, file_url) VALUES (:id, :title, :creator_id, :file_url)")
 	if err != nil {
 		return fmt.Errorf("audiorepo: failed to create audio: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jtenhave/not-just-noise/lib/errorcode"
 	"github.com/jtenhave/not-just-noise/lib/http"
 )
 
@@ -16,6 +17,17 @@ type AudioService interface {
 	UpdateAudio(audio Audio) (Audio, error)
 	DeleteAudio(id string) error
 }
+
+const (
+	failedToUnmarshal = "failed to unmarshal"
+	failedToMarshal   = "failed to marshal"
+	idIsRequired      = "id is required"
+	titleIsRequired   = "title is required"
+	creatorIsRequired = "creator is required"
+	fileURLIsRequired = "file_url is required"
+	fileURLIsNotValid = "file_url is not a valid URL"
+	audioNotFound     = "audio not found"
+)
 
 func CreateRoutes(audioService AudioService) []http.Route {
 	return []http.Route{
@@ -60,17 +72,21 @@ func (audio Audio) ToAudioResponse() AudioResponse {
 func getAudioHandler(request http.Request, audioService AudioService) http.Response {
 	id := request.PathValue("id")
 	if id == "" {
-		return http.CreateErrorResonse(400, "id is required")
+		return http.CreateErrorResonse(400, idIsRequired)
 	}
 
 	audio, err := audioService.GetAudio(id)
 	if err != nil {
-		return http.CreateErrorResonse(500, fmt.Errorf("Failed to get audio: %w", err).Error())
+		if errorcode.ErrorCode(err) == errorcode.NotFound {
+			return http.CreateErrorResonse(404, audioNotFound)
+		}
+
+		return http.CreateErrorResonse(500, err.Error())
 	}
 
 	resultJson, err := json.Marshal(audio.ToAudioResponse())
 	if err != nil {
-		return http.CreateErrorResonse(500, fmt.Errorf("Failed to marshal get audio response: %w", err).Error())
+		return http.CreateErrorResonse(500, fmt.Errorf("%s get audio response: %w", failedToMarshal, err).Error())
 	}
 
 	return http.Response{
@@ -80,15 +96,15 @@ func getAudioHandler(request http.Request, audioService AudioService) http.Respo
 }
 
 type CreateAudioRequest struct {
-	Title   string `json:"title"`
-	Creator string `json:"creator"`
-	FileURL string `json:"file_url"`
+	Title     string `json:"title"`
+	CreatorID string `json:"creator_id"`
+	FileURL   string `json:"file_url"`
 }
 
 func (createAudioRequest CreateAudioRequest) ToAudio() Audio {
 	return Audio{
 		Title:     createAudioRequest.Title,
-		CreatorID: createAudioRequest.Creator,
+		CreatorID: createAudioRequest.CreatorID,
 		FileURL:   createAudioRequest.FileURL,
 	}
 }
@@ -96,15 +112,15 @@ func (createAudioRequest CreateAudioRequest) ToAudio() Audio {
 func (createAudioRequest CreateAudioRequest) Validate() []string {
 	errors := []string{}
 	if createAudioRequest.Title == "" {
-		errors = append(errors, "title is required")
+		errors = append(errors, titleIsRequired)
 	}
-	if createAudioRequest.Creator == "" {
-		errors = append(errors, "creator is required")
+	if createAudioRequest.CreatorID == "" {
+		errors = append(errors, creatorIsRequired)
 	}
 	if createAudioRequest.FileURL == "" {
-		errors = append(errors, "file_url is required")
+		errors = append(errors, fileURLIsRequired)
 	} else if !isValidURL(createAudioRequest.FileURL) {
-		errors = append(errors, "file_url is not a valid URL")
+		errors = append(errors, fileURLIsNotValid)
 	}
 	return errors
 }
@@ -113,7 +129,7 @@ func createAudioHandler(request http.Request, audioService AudioService) http.Re
 	var createAudioRequest CreateAudioRequest
 	err := json.Unmarshal([]byte(request.Body), &createAudioRequest)
 	if err != nil {
-		return http.CreateErrorResonse(400, fmt.Errorf("Failed to unmarshal create audio request: %w", err).Error())
+		return http.CreateErrorResonse(400, fmt.Errorf("%s create audio request: %w", failedToUnmarshal, err).Error())
 	}
 
 	errors := createAudioRequest.Validate()
@@ -123,7 +139,12 @@ func createAudioHandler(request http.Request, audioService AudioService) http.Re
 
 	id, err := audioService.CreateAudio(createAudioRequest.ToAudio())
 	if err != nil {
-		return http.CreateErrorResonse(500, fmt.Errorf("Failed to create audio: %w", err).Error())
+		code := errorcode.ErrorCode(err)
+		if code == 0 {
+			code = 500
+		}
+
+		return http.CreateErrorResonse(code, err.Error())
 	}
 
 	response := map[string]string{
@@ -132,7 +153,7 @@ func createAudioHandler(request http.Request, audioService AudioService) http.Re
 
 	resultJson, err := json.Marshal(response)
 	if err != nil {
-		return http.CreateErrorResonse(500, fmt.Errorf("Failed to marshal create audio response: %w", err).Error())
+		return http.CreateErrorResonse(500, fmt.Errorf("%s create audio response: %w", failedToMarshal, err).Error())
 	}
 
 	return http.Response{

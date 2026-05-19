@@ -1,11 +1,15 @@
 package audio
 
 import (
+	"fmt"
+
 	"github.com/google/uuid"
+	"github.com/jtenhave/not-just-noise/lib/errorcode"
 )
 
 type audioRepo interface {
-	GetAudio(id string) (Audio, error)
+	GetAudioByID(id string) (Audio, error)
+	GetAudioByCreatorIDAndTitle(creatorID string, title string) (Audio, error)
 	CreateAudio(audio Audio) error
 }
 
@@ -20,14 +24,28 @@ func NewAudioService(audioRepo audioRepo) audioService {
 }
 
 func (audioService audioService) GetAudio(id string) (Audio, error) {
-	// toDO GET FROM THE db
-	return Audio{}, nil
+	audio, err := audioService.audioRepo.GetAudioByID(id)
+	if err != nil {
+		return Audio{}, err
+	}
+
+	return audio, nil
 }
 
 func (audioService audioService) CreateAudio(audio Audio) (string, error) {
 	audio.ID = uuid.New().String()
 
-	// toDO INSERT IN THE db
+	_, err := audioService.audioRepo.GetAudioByCreatorIDAndTitle(audio.CreatorID, audio.Title)
+	if err == nil {
+		return "", errorcode.NewErrorCode(errorcode.Conflict, fmt.Sprintf("audio with title '%s' already exists for creator '%s'", audio.Title, audio.CreatorID))
+	} else if errorcode.ErrorCode(err) != errorcode.NotFound {
+		return "", err
+	}
+
+	err = audioService.audioRepo.CreateAudio(audio)
+	if err != nil {
+		return "", err
+	}
 
 	return audio.ID, nil
 }
