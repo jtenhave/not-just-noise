@@ -63,7 +63,7 @@ func (repo *audioRepo) CreateAudio(a audio.Audio) error {
 	dbRow := toAudioDBRow(a)
 	err := repo.db.NamedExec(&dbRow, "INSERT INTO audio (id, title, creator_id, file_url) VALUES (:id, :title, :creator_id, :file_url)")
 	if err != nil {
-		return fmt.Errorf("audiorepo: failed to create audio: %w", err)
+		return errorcode.Wrap(err, "audiorepo: failed to create audio")
 	}
 
 	return nil

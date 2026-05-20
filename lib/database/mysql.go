@@ -3,8 +3,9 @@ package database
 import (
 	"fmt"
 
-	_ "github.com/go-sql-driver/mysql"
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+	"github.com/jtenhave/not-just-noise/lib/errorcode"
 )
 
 type mysql struct {
@@ -41,6 +42,12 @@ func (db *mysql) Select(dest interface{}, query string, args ...interface{}) err
 func (db *mysql) NamedExec(source interface{}, query string) error {
 	_, err := db.db.NamedExec(query, source)
 	if err != nil {
+		if mysqlError, ok := err.(*mysqldriver.MySQLError); ok {
+			if mysqlError.Number == 1062 {
+				return errorcode.NewErrorCode(errorcode.Conflict, "duplicate entry")
+			}
+		}
+
 		return fmt.Errorf("lib.mysql: failed to execute named query: %w", err)
 	}
 

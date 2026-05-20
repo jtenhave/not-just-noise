@@ -1,9 +1,11 @@
 package errorcode
 
+import "fmt"
+
 const (
-	BadRequest = 400
-	NotFound = 404
-	Conflict = 409
+	BadRequest          = 400
+	NotFound            = 404
+	Conflict            = 409
 	InternalServerError = 500
 )
 
@@ -30,4 +32,14 @@ func ErrorCode(e error) int {
 	return 0
 }
 
+func Wrap(e error, message string) error {
 
+	if err, ok := e.(*errorCode); ok {
+		return &errorCode{
+			Code:    err.Code,
+			Message: fmt.Sprintf("%s: %s", message, err.Message),
+		}
+	}
+
+	return fmt.Errorf("%s: %w", message, e)
+}
