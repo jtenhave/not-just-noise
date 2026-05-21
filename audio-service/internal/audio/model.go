@@ -7,6 +7,8 @@ type Audio struct {
 	CreatorID string
 	Title     string
 	FileURL   string
+	Version   int64
+	Status    string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

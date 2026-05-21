@@ -20,9 +20,9 @@ func (m *dbMock) ReadQuery(query string, dest interface{}, args ...interface{}) 
 	return a.Error(0)
 }
 
-func (m *dbMock) WriteQuery(query string, source interface{}) error {
+func (m *dbMock) WriteQuery(query string, source interface{}) (int64, error) {
 	args := m.Called(source, query)
-	return args.Error(0)
+	return args.Get(0).(int64), args.Error(1)
 }
 
 func TestGetAudioByID_NoAudioFound(t *testing.T) {
@@ -75,7 +75,7 @@ func TestCreateAudio_Failure(t *testing.T) {
 	db := new(dbMock)
 	audioRepo := NewAudioRepo(db)
 
-	db.On("WriteQuery", mock.Anything, mock.Anything).Return(fmt.Errorf("failed to create audio"))
+	db.On("WriteQuery", mock.Anything, mock.Anything).Return(int64(0), fmt.Errorf("failed to create audio"))
 
 	err := audioRepo.CreateAudio(audio.Audio{CreatorID: "456def", Title: "Test Audio", FileURL: "https://test.com/audio.mp3"})
 	assert.Error(t, err)
@@ -97,7 +97,7 @@ func TestCreateAudio_Success(t *testing.T) {
 		Run(func(args mock.Arguments) {
 			insertedAudioRow = args.Get(0).(*AudioDBRow)
 		}).
-		Return(nil)
+		Return(int64(1), nil)
 
 	err := audioRepo.CreateAudio(audio)
 	assert.NoError(t, err)
@@ -120,7 +120,46 @@ func TestUpdateAudio_Failure(t *testing.T) {
 	db := new(dbMock)
 	audioRepo := NewAudioRepo(db)
 
-	db.On("WriteQuery", mock.Anything, mock.Anything).Return(fmt.Errorf("failed to update audio"))
+	audioRow := AudioDBRow{
+		ID:        "123abc",
+		CreatorID: "456def",
+		Title:     "Test Audio",
+		FileURL:   "https://test.com/audio.mp3",
+	}
+
+	db.On("ReadQuery", mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]AudioDBRow)
+			*dest = []AudioDBRow{audioRow}
+		}).
+		Return(nil)
+
+	db.On("WriteQuery", mock.Anything, mock.Anything).Return(int64(0), fmt.Errorf("failed to update audio"))
+
+	title := "New Title"
+	err := audioRepo.UpdateAudio(audio.UpdateAudio{ID: "123abc", Title: &title, FileURL: nil})
+	assert.Error(t, err)
+}
+
+func TestUpdateAudio_NoRowsAffected(t *testing.T) {
+	db := new(dbMock)
+	audioRepo := NewAudioRepo(db)
+
+	audioRow := AudioDBRow{
+		ID:        "123abc",
+		CreatorID: "456def",
+		Title:     "Test Audio",
+		FileURL:   "https://test.com/audio.mp3",
+	}
+
+	db.On("ReadQuery", mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]AudioDBRow)
+			*dest = []AudioDBRow{audioRow}
+		}).
+		Return(nil)
+
+	db.On("WriteQuery", mock.Anything, mock.Anything).Return(int64(0), nil)
 
 	title := "New Title"
 	err := audioRepo.UpdateAudio(audio.UpdateAudio{ID: "123abc", Title: &title, FileURL: nil})
@@ -131,12 +170,26 @@ func TestUpdateAudio_PartialUpdate(t *testing.T) {
 	db := new(dbMock)
 	audioRepo := NewAudioRepo(db)
 
+	audioRow := AudioDBRow{
+		ID:        "123abc",
+		CreatorID: "456def",
+		Title:     "Test Audio",
+		FileURL:   "https://test.com/audio.mp3",
+	}
+
+	db.On("ReadQuery", mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]AudioDBRow)
+			*dest = []AudioDBRow{audioRow}
+		}).
+		Return(nil)
+
 	var query string
 	db.On("WriteQuery", mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
 			query = args.Get(1).(string)
 		}).
-		Return(nil)
+		Return(int64(1), nil)
 
 	title := "New Title"
 	err := audioRepo.UpdateAudio(audio.UpdateAudio{ID: "123abc", Title: &title, FileURL: nil})
@@ -149,7 +202,21 @@ func TestDeleteAudio_Failure(t *testing.T) {
 	db := new(dbMock)
 	audioRepo := NewAudioRepo(db)
 
-	db.On("WriteQuery", mock.Anything, mock.Anything).Return(fmt.Errorf("failed to delete audio"))
+	audioRow := AudioDBRow{
+		ID:        "123abc",
+		CreatorID: "456def",
+		Title:     "Test Audio",
+		FileURL:   "https://test.com/audio.mp3",
+	}
+
+	db.On("ReadQuery", mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]AudioDBRow)
+			*dest = []AudioDBRow{audioRow}
+		}).
+		Return(nil)
+
+	db.On("WriteQuery", mock.Anything, mock.Anything).Return(int64(0), fmt.Errorf("failed to delete audio"))
 
 	err := audioRepo.DeleteAudio("123abc")
 	assert.Error(t, err)
@@ -159,7 +226,21 @@ func TestDeleteAudio_Success(t *testing.T) {
 	db := new(dbMock)
 	audioRepo := NewAudioRepo(db)
 
-	db.On("WriteQuery", mock.Anything, mock.Anything).Return(nil)
+	audioRow := AudioDBRow{
+		ID:        "123abc",
+		CreatorID: "456def",
+		Title:     "Test Audio",
+		FileURL:   "https://test.com/audio.mp3",
+	}
+
+	db.On("ReadQuery", mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]AudioDBRow)
+			*dest = []AudioDBRow{audioRow}
+		}).
+		Return(nil)
+
+	db.On("WriteQuery", mock.Anything, mock.Anything).Return(int64(1), nil)
 
 	err := audioRepo.DeleteAudio("123abc")
 	assert.NoError(t, err)

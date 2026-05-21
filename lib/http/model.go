@@ -29,14 +29,17 @@ type response struct {
 	body interface{}
 }
 
+// Code returns the code of the response.
 func (r *response) Code() int {
 	return r.code
 }
 
+// Body returns the body of the response.
 func (r *response) Body() interface{} {
 	return r.body
 }
 
+// CreateResponse creates a new Response with the given code and body.
 func CreateResponse(code int, body interface{}) Response {
 	return &response{
 		code: code,
@@ -44,17 +47,18 @@ func CreateResponse(code int, body interface{}) Response {
 	}
 }
 
+// CreateErrorResponse creates a new Response with the given error.
 func CreateErrorResponse(err error) Response {
 	errorType := njnerror.Type(err)
 	code := InternalServerError
 
 	switch errorType {
-		case njnerror.BadRequest:
-			code = BadRequest
-		case njnerror.NotFound:
-			code = NotFound
-		case njnerror.Conflict:
-			code = Conflict
+	case njnerror.BadRequest:
+		code = BadRequest
+	case njnerror.NotFound:
+		code = NotFound
+	case njnerror.Conflict:
+		code = Conflict
 	}
 
 	body := map[string]string{
@@ -74,6 +78,7 @@ type Route struct {
 	Handler  func(Request) Response
 }
 
+// CreateRoute creates a new Route using the given method, path, bodyType and handler.
 func CreateRoute(method string, path string, bodyType reflect.Type, handler func(Request) Response) Route {
 	return Route{
 		Method:   method,

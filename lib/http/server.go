@@ -11,8 +11,17 @@ import (
 	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
+// StartServer starts the server using the given routes and port.
 func StartServer(routes []Route, port int) error {
 	mux := http.NewServeMux()
+
+	routes = append(routes, Route{
+		Method: "GET",
+		Path:   "/health",
+		Handler: func(request Request) Response {
+			return CreateResponse(204, nil)
+		},
+	})
 
 	fmt.Printf("registering routes:\n")
 	for _, route := range routes {
@@ -35,11 +44,6 @@ func StartServer(routes []Route, port int) error {
 
 		fmt.Printf("%s\n", pattern)
 	}
-
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		w.Write([]byte("OK"))
-	})
 
 	fmt.Printf("\nserving on port: %d\n", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), mux)

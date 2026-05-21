@@ -39,26 +39,22 @@ func (db *mysql) ReadQuery(query string, dest interface{}, args ...interface{}) 
 }
 
 // WriteQuery executes the given query using the given source. Returns the first error encountered.
-func (db *mysql) WriteQuery(query string, source interface{}) error {
+func (db *mysql) WriteQuery(query string, source interface{}) (int64, error) {
 	result, err := db.db.NamedExec(query, source)
 	if err != nil {
 		if mysqlError, ok := err.(*mysqldriver.MySQLError); ok {
 			if mysqlError.Number == 1062 {
-				return njnerror.NewNJNError(njnerror.Conflict, "libmysql.WriteQuery: duplicate entry")
+				return 0, njnerror.NewNJNError(njnerror.Conflict, "libmysql.WriteQuery: duplicate entry")
 			}
 		}
 
-		return fmt.Errorf("libmysql.WriteQuery: failed to execute query: %w", err)
+		return 0, fmt.Errorf("libmysql.WriteQuery: failed to execute query: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("libmysql.WriteQuery: failed to get rows affected: %w", err)
+		return 0, fmt.Errorf("libmysql.WriteQuery: failed to get rows affected: %w", err)
 	}
 
-	if rowsAffected == 0 {
-		return njnerror.NewNJNError(njnerror.NotFound, "libmysql.WriteQuery: not found")
-	}
-
-	return nil
+	return rowsAffected, nil
 }

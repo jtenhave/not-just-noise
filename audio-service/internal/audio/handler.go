@@ -28,6 +28,7 @@ const (
 	failedToUnmarshal = "failed to unmarshal"
 )
 
+// CreateRoutes creates the routes using the given audioService.
 func CreateRoutes(audioService AudioService) []http.Route {
 	return []http.Route{
 
@@ -58,6 +59,7 @@ type AudioResponse struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// ToAudioResponse converts the given audio to an AudioResponse.
 func (audio Audio) ToAudioResponse() AudioResponse {
 	return AudioResponse{
 		ID:        audio.ID,
@@ -69,6 +71,7 @@ func (audio Audio) ToAudioResponse() AudioResponse {
 	}
 }
 
+// getAudioHandler handles the GET /audio/{id} request, using the given audioService.
 func getAudioHandler(request http.Request, audioService AudioService) http.Response {
 	id := request.PathValues["id"]
 	if id == "" {
@@ -93,6 +96,7 @@ type CreateAudioResponse struct {
 	ID string `json:"id"`
 }
 
+// ToAudio converts the given createAudioRequest to an Audio.
 func (createAudioRequest CreateAudioRequest) ToAudio() Audio {
 	return Audio{
 		Title:     createAudioRequest.Title,
@@ -101,6 +105,7 @@ func (createAudioRequest CreateAudioRequest) ToAudio() Audio {
 	}
 }
 
+// Validate validates the given createAudioRequest.
 func (createAudioRequest CreateAudioRequest) Validate() []string {
 	errors := []string{}
 	if createAudioRequest.Title == "" {
@@ -117,6 +122,7 @@ func (createAudioRequest CreateAudioRequest) Validate() []string {
 	return errors
 }
 
+// createAudioHandler handles the POST /audio request, using the given audioService.
 func createAudioHandler(request http.Request, audioService AudioService) http.Response {
 	createAudioRequest, ok := request.Body.(CreateAudioRequest)
 	if !ok {
@@ -145,6 +151,7 @@ type UpdateAudioRequest struct {
 	FileURL *string `json:"file_url"`
 }
 
+// Validate validates the given updateAudioRequest.
 func (updateAudioRequest UpdateAudioRequest) Validate() []string {
 	errors := []string{}
 	if updateAudioRequest.Title != nil && *updateAudioRequest.Title == "" {
@@ -161,6 +168,7 @@ func (updateAudioRequest UpdateAudioRequest) Validate() []string {
 	return errors
 }
 
+// ToPatchAudio converts the given updateAudioRequest to an UpdateAudio.
 func (updateAudioRequest UpdateAudioRequest) ToPatchAudio() UpdateAudio {
 	return UpdateAudio{
 		Title:   updateAudioRequest.Title,
@@ -168,6 +176,7 @@ func (updateAudioRequest UpdateAudioRequest) ToPatchAudio() UpdateAudio {
 	}
 }
 
+// updateAudioHandler handles the PATCH /audio/{id} request, using the given audioService.
 func updateAudioHandler(request http.Request, audioService AudioService) http.Response {
 	id := request.PathValues["id"]
 	if id == "" {
@@ -195,6 +204,7 @@ func updateAudioHandler(request http.Request, audioService AudioService) http.Re
 	return http.CreateResponse(204, nil)
 }
 
+// deleteAudioHandler handles the DELETE /audio/{id} request, using the given audioService.
 func deleteAudioHandler(request http.Request, audioService AudioService) http.Response {
 	id := request.PathValues["id"]
 	if id == "" {
@@ -209,6 +219,7 @@ func deleteAudioHandler(request http.Request, audioService AudioService) http.Re
 	return http.CreateResponse(204, nil)
 }
 
+// isValidURL checks if the given str is a valid URL.
 func isValidURL(str string) bool {
 	u, err := url.ParseRequestURI(str)
 	return err == nil && u.Scheme != "" && u.Host != ""

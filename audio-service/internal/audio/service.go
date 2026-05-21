@@ -16,12 +16,14 @@ type audioService struct {
 	audioRepo audioRepo
 }
 
+// NewAudioService creates a new audioService using the given audioRepo.
 func NewAudioService(audioRepo audioRepo) audioService {
 	return audioService{
 		audioRepo: audioRepo,
 	}
 }
 
+// GetAudio gets an audio record using the given id. Returns the audio record and the first error encountered.
 func (audioService audioService) GetAudio(id string) (Audio, error) {
 	audio, err := audioService.audioRepo.GetAudio(id)
 	if err != nil {
@@ -31,6 +33,7 @@ func (audioService audioService) GetAudio(id string) (Audio, error) {
 	return audio, nil
 }
 
+// CreateAudio creates a new audio record using the given audio. Returns the id of the created audio and the first error encountered.
 func (audioService audioService) CreateAudio(audio Audio) (string, error) {
 	audio.ID = uuid.New().String()
 	err := audioService.audioRepo.CreateAudio(audio)
@@ -41,6 +44,7 @@ func (audioService audioService) CreateAudio(audio Audio) (string, error) {
 	return audio.ID, nil
 }
 
+// UpdateAudio updates an audio record using the given audio. Returns the first error encountered.
 func (audioService audioService) UpdateAudio(audio UpdateAudio) error {
 	err := audioService.audioRepo.UpdateAudio(audio)
 	if err != nil {
@@ -50,6 +54,7 @@ func (audioService audioService) UpdateAudio(audio UpdateAudio) error {
 	return nil
 }
 
+// DeleteAudio deletes an audio record using the given id. Returns the first error encountered.
 func (audioService audioService) DeleteAudio(id string) error {
 	err := audioService.audioRepo.DeleteAudio(id)
 	if err != nil {

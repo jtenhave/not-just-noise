@@ -17,6 +17,8 @@ type AudioDBRow struct {
 	CreatorID string    `db:"creator_id"`
 	Title     string    `db:"title"`
 	FileURL   string    `db:"file_url"`
+	Version   int64     `db:"version"`
+	Status    string    `db:"status"`
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
 }
@@ -31,13 +33,13 @@ func NewAudioRepo(db DB) *audioRepo {
 // GetAudio gets an audio record using the given id. Returns the audio record and the first error encountered.
 func (repo *audioRepo) GetAudio(id string) (audio.Audio, error) {
 	var dbRows []AudioDBRow
-	err := repo.db.ReadQuery("SELECT id, title, creator_id, file_url, created_at, updated_at FROM audio WHERE id = ?", &dbRows, id)
+	err := repo.db.ReadQuery("SELECT id, title, creator_id, file_url, version, status, created_at, updated_at FROM audio WHERE id = ? AND status = 'active'", &dbRows, id)
 	if err != nil {
-		return audio.Audio{}, njnerror.Wrapf("audiorepo.GetAudioByID: failed to get audio: %w", err)
+		return audio.Audio{}, njnerror.Wrapf("audiorepo.GetAudio: failed to get audio: %w", err)
 	}
 
 	if len(dbRows) == 0 {
-		return audio.Audio{}, njnerror.NewNJNError(njnerror.NotFound, "audiorepo.GetAudioByID: audio not found")
+		return audio.Audio{}, njnerror.NewNJNError(njnerror.NotFound, "audiorepo.GetAudio: audio not found")
 	}
 
 	return dbRows[0].ToAudio(), nil
@@ -50,15 +52,17 @@ func (a AudioDBRow) ToAudio() audio.Audio {
 		CreatorID: a.CreatorID,
 		Title:     a.Title,
 		FileURL:   a.FileURL,
+		Version:   a.Version,
+		Status:    a.Status,
 		CreatedAt: a.CreatedAt,
 		UpdatedAt: a.UpdatedAt,
 	}
 }
 
-// CreateAudio creates a new audio record using the given audio a. Returns the first error encountered.
-func (repo *audioRepo) CreateAudio(a audio.Audio) error {
-	dbRow := toAudioDBRow(a)
-	err := repo.db.WriteQuery("INSERT INTO audio (id, title, creator_id, file_url) VALUES (:id, :title, :creator_id, :file_url)", &dbRow)
+// CreateAudio creates a new audio record using the given audio. Returns the first error encountered.
+func (repo *audioRepo) CreateAudio(audio audio.Audio) error {
+	dbRow := toAudioDBRow(audio)
+	_, err := repo.db.WriteQuery("INSERT INTO audio (id, title, creator_id, file_url) VALUES (:id, :title, :creator_id, :file_url)", &dbRow)
 	if err != nil {
 		return njnerror.Wrapf("audiorepo.CreateAudio: failed to create audio: %w", err)
 	}
@@ -66,24 +70,30 @@ func (repo *audioRepo) CreateAudio(a audio.Audio) error {
 	return nil
 }
 
-// ToAudioDBRow converts the Audio a to an AudioDBRow.
-func toAudioDBRow(a audio.Audio) AudioDBRow {
+// ToAudioDBRow converts the given audio to an AudioDBRow.
+func toAudioDBRow(audio audio.Audio) AudioDBRow {
 	return AudioDBRow{
-		ID:        a.ID,
-		CreatorID: a.CreatorID,
-		Title:     a.Title,
-		FileURL:   a.FileURL,
+		ID:        audio.ID,
+		CreatorID: audio.CreatorID,
+		Title:     audio.Title,
+		FileURL:   audio.FileURL,
 	}
 }
 
+// UpdateAudio updates an audio record using the given audio. Returns the first error encountered.
 func (repo *audioRepo) UpdateAudio(audio audio.UpdateAudio) error {
 	if audio.Title == nil && audio.FileURL == nil {
 		return nil
 	}
 
-	dbRow := toUpdateAudioDBRow(audio)
-	query := "UPDATE audio SET "
+	storedAudio, err := repo.GetAudio(audio.ID)
+	if err != nil {
+		return njnerror.Wrapf("audiorepo.UpdateAudio: failed to get audio: %w", err)
+	}
 
+	dbRow := toUpdateAudioDBRow(audio, storedAudio)
+
+	query := "UPDATE audio SET "
 	updates := make([]string, 0)
 	if audio.Title != nil {
 		updates = append(updates, "title = :title")
@@ -91,36 +101,61 @@ func (repo *audioRepo) UpdateAudio(audio audio.UpdateAudio) error {
 	if audio.FileURL != nil {
 		updates = append(updates, "file_url = :file_url")
 	}
-	query += strings.Join(updates, ", ") + " WHERE id = :id"
 
-	err := repo.db.WriteQuery(query, &dbRow)
+	updates = append(updates, "version = version + 1")
+	query += strings.Join(updates, ", ") + " WHERE id = :id AND version = :version AND status = 'active'"
+
+	rowsAffected, err := repo.db.WriteQuery(query, &dbRow)
 	if err != nil {
 		return njnerror.Wrapf("audiorepo.UpdateAudio: failed to update audio: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return njnerror.NewNJNError(njnerror.Conflict, "audiorepo.UpdateAudio: audio version out of date")
 	}
 
 	return nil
 }
 
-func toUpdateAudioDBRow(a audio.UpdateAudio) AudioDBRow {
+// toUpdateAudioDBRow converts the given audio to an AudioDBRow, using storedAudio.
+func toUpdateAudioDBRow(audio audio.UpdateAudio, storedAudio audio.Audio) AudioDBRow {
 	title := ""
-	if a.Title != nil {
-		title = *a.Title
+	if audio.Title != nil {
+		title = *audio.Title
 	}
 
 	fileURL := ""
-	if a.FileURL != nil {
-		fileURL = *a.FileURL
+	if audio.FileURL != nil {
+		fileURL = *audio.FileURL
 	}
 
 	return AudioDBRow{
-		ID:      a.ID,
+		ID:      audio.ID,
 		Title:   title,
 		FileURL: fileURL,
+		Version: storedAudio.Version,
 	}
 }
 
+// DeleteAudio deletes an audio record using the given id. Returns the first error encountered.
 func (repo *audioRepo) DeleteAudio(id string) error {
-	err := repo.db.WriteQuery("DELETE FROM audio WHERE id = :id", &AudioDBRow{ID: id})
+	_, err := repo.GetAudio(id)
+	if err != nil {
+		return njnerror.Wrapf("audiorepo.DeleteAudio: failed to get audio: %w", err)
+	}
+
+	dbRow := AudioDBRow{
+		ID:     id,
+		Status: "deleted",
+	}
+
+	// Delete should always succeed, so we don't check for version in this case.
+	query := `UPDATE audio SET 
+		version = version + 1,
+		status = 'deleted'
+		WHERE id = :id`
+
+	_, err = repo.db.WriteQuery(query, &dbRow)
 	if err != nil {
 		return njnerror.Wrapf("audiorepo.DeleteAudio: failed to delete audio: %w", err)
 	}
