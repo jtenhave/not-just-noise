@@ -1,51 +1,84 @@
 package http
 
 import (
-	"encoding/json"
-	"fmt"
-	"strconv"
+	"reflect"
+
+	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
 type Request struct {
-	Body      string
-	PathValue func(string) string
+	Body       interface{}
+	PathValues map[string]string
 }
 
-type Response struct {
-	StatusCode int
-	Body       string
+const (
+	UnknownError        = 0
+	BadRequest          = 400
+	NotFound            = 404
+	Conflict            = 409
+	InternalServerError = 500
+)
+
+type Response interface {
+	Code() int
+	Body() interface{}
+}
+
+type response struct {
+	code int
+	body interface{}
+}
+
+func (r *response) Code() int {
+	return r.code
+}
+
+func (r *response) Body() interface{} {
+	return r.body
+}
+
+func CreateResponse(code int, body interface{}) Response {
+	return &response{
+		code: code,
+		body: body,
+	}
+}
+
+func CreateErrorResponse(err error) Response {
+	errorType := njnerror.Type(err)
+	code := InternalServerError
+
+	switch errorType {
+		case njnerror.BadRequest:
+			code = BadRequest
+		case njnerror.NotFound:
+			code = NotFound
+		case njnerror.Conflict:
+			code = Conflict
+	}
+
+	body := map[string]string{
+		"error": err.Error(),
+	}
+
+	return &response{
+		code: code,
+		body: body,
+	}
 }
 
 type Route struct {
-	Method  string
-	Path    string
-	Handler func(Request) Response
+	Method   string
+	Path     string
+	BodyType reflect.Type
+	Handler  func(Request) Response
 }
 
-func CreateRoute(method string, path string, handler func(Request) Response) Route {
+func CreateRoute(method string, path string, bodyType reflect.Type, handler func(Request) Response) Route {
 	return Route{
-		Method:  method,
-		Path:    path,
-		Handler: handler,
-	}
-}
-
-func CreateErrorResonse(code int, message string) Response {
-	body := map[string]string{
-		"code":  strconv.Itoa(code),
-		"error": message,
-	}
-
-	errorBytes, err := json.Marshal(body)
-	if err != nil {
-		return Response{
-			StatusCode: 500,
-			Body:       fmt.Errorf("Failed to marshal error response: %w", err).Error(),
-		}
-	}
-
-	return Response{
-		StatusCode: code,
-		Body:       string(errorBytes),
+		Method:   method,
+		Path:     path,
+		BodyType: bodyType,
+		Handler:  handler,
 	}
 }

@@ -10,3 +10,9 @@ type Audio struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
+
+type UpdateAudio struct {
+	ID      string
+	Title   *string
+	FileURL *string
+}

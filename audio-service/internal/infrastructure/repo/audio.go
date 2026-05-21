@@ -1,11 +1,11 @@
 package repo
 
 import (
-	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jtenhave/not-just-noise/audio-service/internal/audio"
-	"github.com/jtenhave/not-just-noise/lib/errorcode"
+	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
 type audioRepo struct {
@@ -29,44 +29,18 @@ func NewAudioRepo(db DB) *audioRepo {
 }
 
 // GetAudio gets an audio record using the given id. Returns the audio record and the first error encountered.
-func (repo *audioRepo) GetAudioByID(id string) (audio.Audio, error) {
+func (repo *audioRepo) GetAudio(id string) (audio.Audio, error) {
 	var dbRows []AudioDBRow
-	err := repo.db.Select(&dbRows, "SELECT id, title, creator_id, file_url, created_at, updated_at FROM audio WHERE id = ?", id)
+	err := repo.db.ReadQuery("SELECT id, title, creator_id, file_url, created_at, updated_at FROM audio WHERE id = ?", &dbRows, id)
 	if err != nil {
-		return audio.Audio{}, fmt.Errorf("audiorepo: failed to get audio: %w", err)
+		return audio.Audio{}, njnerror.Wrapf("audiorepo.GetAudioByID: failed to get audio: %w", err)
 	}
 
 	if len(dbRows) == 0 {
-		return audio.Audio{}, errorcode.NewErrorCode(errorcode.NotFound, "audio not found")
+		return audio.Audio{}, njnerror.NewNJNError(njnerror.NotFound, "audiorepo.GetAudioByID: audio not found")
 	}
 
 	return dbRows[0].ToAudio(), nil
-}
-
-// GetAudio gets an audio record using the given id. Returns the audio record and the first error encountered.
-func (repo *audioRepo) GetAudioByCreatorIDAndTitle(creatorID string, title string) (audio.Audio, error) {
-	var dbRows []AudioDBRow
-	err := repo.db.Select(&dbRows, "SELECT id, title, creator_id, file_url, created_at, updated_at FROM audio WHERE creator_id = ? AND title = ?", creatorID, title)
-	if err != nil {
-		return audio.Audio{}, fmt.Errorf("audiorepo: failed to get audio by creator id and title: %w", err)
-	}
-
-	if len(dbRows) == 0 {
-		return audio.Audio{}, errorcode.NewErrorCode(errorcode.NotFound, "audio not found")
-	}
-
-	return dbRows[0].ToAudio(), nil
-}
-
-// CreateAudio creates a new audio record using the given audio a. Returns the first error encountered.
-func (repo *audioRepo) CreateAudio(a audio.Audio) error {
-	dbRow := toAudioDBRow(a)
-	err := repo.db.NamedExec(&dbRow, "INSERT INTO audio (id, title, creator_id, file_url) VALUES (:id, :title, :creator_id, :file_url)")
-	if err != nil {
-		return errorcode.Wrap(err, "audiorepo: failed to create audio")
-	}
-
-	return nil
 }
 
 // ToAudio converts the AudioDBRow a to an Audio.
@@ -81,6 +55,17 @@ func (a AudioDBRow) ToAudio() audio.Audio {
 	}
 }
 
+// CreateAudio creates a new audio record using the given audio a. Returns the first error encountered.
+func (repo *audioRepo) CreateAudio(a audio.Audio) error {
+	dbRow := toAudioDBRow(a)
+	err := repo.db.WriteQuery("INSERT INTO audio (id, title, creator_id, file_url) VALUES (:id, :title, :creator_id, :file_url)", &dbRow)
+	if err != nil {
+		return njnerror.Wrapf("audiorepo.CreateAudio: failed to create audio: %w", err)
+	}
+
+	return nil
+}
+
 // ToAudioDBRow converts the Audio a to an AudioDBRow.
 func toAudioDBRow(a audio.Audio) AudioDBRow {
 	return AudioDBRow{
@@ -89,4 +74,56 @@ func toAudioDBRow(a audio.Audio) AudioDBRow {
 		Title:     a.Title,
 		FileURL:   a.FileURL,
 	}
+}
+
+func (repo *audioRepo) UpdateAudio(audio audio.UpdateAudio) error {
+	if audio.Title == nil && audio.FileURL == nil {
+		return nil
+	}
+
+	dbRow := toUpdateAudioDBRow(audio)
+	query := "UPDATE audio SET "
+
+	updates := make([]string, 0)
+	if audio.Title != nil {
+		updates = append(updates, "title = :title")
+	}
+	if audio.FileURL != nil {
+		updates = append(updates, "file_url = :file_url")
+	}
+	query += strings.Join(updates, ", ") + " WHERE id = :id"
+
+	err := repo.db.WriteQuery(query, &dbRow)
+	if err != nil {
+		return njnerror.Wrapf("audiorepo.UpdateAudio: failed to update audio: %w", err)
+	}
+
+	return nil
+}
+
+func toUpdateAudioDBRow(a audio.UpdateAudio) AudioDBRow {
+	title := ""
+	if a.Title != nil {
+		title = *a.Title
+	}
+
+	fileURL := ""
+	if a.FileURL != nil {
+		fileURL = *a.FileURL
+	}
+
+	return AudioDBRow{
+		ID:      a.ID,
+		Title:   title,
+		FileURL: fileURL,
+	}
+}
+
+func (repo *audioRepo) DeleteAudio(id string) error {
+	err := repo.db.WriteQuery("DELETE FROM audio WHERE id = :id", &AudioDBRow{ID: id})
+	if err != nil {
+		return njnerror.Wrapf("audiorepo.DeleteAudio: failed to delete audio: %w", err)
+	}
+
+	return nil
 }

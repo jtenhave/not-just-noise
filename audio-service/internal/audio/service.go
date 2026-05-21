@@ -1,16 +1,15 @@
 package audio
 
 import (
-	"fmt"
-
 	"github.com/google/uuid"
-	"github.com/jtenhave/not-just-noise/lib/errorcode"
+	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
 type audioRepo interface {
-	GetAudioByID(id string) (Audio, error)
-	GetAudioByCreatorIDAndTitle(creatorID string, title string) (Audio, error)
+	GetAudio(id string) (Audio, error)
 	CreateAudio(audio Audio) error
+	UpdateAudio(audio UpdateAudio) error
+	DeleteAudio(id string) error
 }
 
 type audioService struct {
@@ -24,9 +23,9 @@ func NewAudioService(audioRepo audioRepo) audioService {
 }
 
 func (audioService audioService) GetAudio(id string) (Audio, error) {
-	audio, err := audioService.audioRepo.GetAudioByID(id)
+	audio, err := audioService.audioRepo.GetAudio(id)
 	if err != nil {
-		return Audio{}, err
+		return Audio{}, njnerror.Wrapf("audioservice.GetAudio: failed to get audio: %w", err)
 	}
 
 	return audio, nil
@@ -34,28 +33,28 @@ func (audioService audioService) GetAudio(id string) (Audio, error) {
 
 func (audioService audioService) CreateAudio(audio Audio) (string, error) {
 	audio.ID = uuid.New().String()
-
-	_, err := audioService.audioRepo.GetAudioByCreatorIDAndTitle(audio.CreatorID, audio.Title)
-	if err == nil {
-		return "", errorcode.NewErrorCode(errorcode.Conflict, fmt.Sprintf("audio with title '%s' already exists for creator '%s'", audio.Title, audio.CreatorID))
-	} else if errorcode.ErrorCode(err) != errorcode.NotFound {
-		return "", err
-	}
-
-	err = audioService.audioRepo.CreateAudio(audio)
+	err := audioService.audioRepo.CreateAudio(audio)
 	if err != nil {
-		return "", err
+		return "", njnerror.Wrapf("audioservice.CreateAudio: failed to create audio: %w", err)
 	}
 
 	return audio.ID, nil
 }
 
-func (audioService audioService) UpdateAudio(audio Audio) (Audio, error) {
-	// toDO UPDATE IN THE db
-	return audio, nil
+func (audioService audioService) UpdateAudio(audio UpdateAudio) error {
+	err := audioService.audioRepo.UpdateAudio(audio)
+	if err != nil {
+		return njnerror.Wrapf("audioservice.UpdateAudio: failed to update audio: %w", err)
+	}
+
+	return nil
 }
 
 func (audioService audioService) DeleteAudio(id string) error {
-	// toDO DELETE FROM THE db
+	err := audioService.audioRepo.DeleteAudio(id)
+	if err != nil {
+		return njnerror.Wrapf("audioservice.DeleteAudio: failed to delete audio: %w", err)
+	}
+
 	return nil
 }
