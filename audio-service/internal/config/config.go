@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jtenhave/not-just-noise/lib/database/mysql"
+	"github.com/jtenhave/not-just-noise/lib/database"
 )
 
 const mysqlConfigPath = "mysql.json"
@@ -16,13 +16,13 @@ type SNSConfig struct {
 }
 
 type Config struct {
-	MySQL mysql.MySQLConfig
+	MySQL database.MySQLConfig
 	SNS   SNSConfig
 }
 
 // LoadConfig loads the config from the given path. Returns the config and the first error encountered.
 func LoadConfig(path string) (Config, error) {
-	var mySQLConfig mysql.MySQLConfig
+	var mySQLConfig database.MySQLConfig
 	err := loadJsonFile(fmt.Sprintf("%s%s", path, mysqlConfigPath), &mySQLConfig)
 	if err != nil {
 		return Config{}, fmt.Errorf("failed to load mysql config: %w", err)

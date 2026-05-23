@@ -1,55 +1,57 @@
-package repo
+package audio
 
 import (
 	"context"
 	"strings"
 	"time"
 
-	"github.com/jtenhave/not-just-noise/audio-service/internal/audio"
 	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
-type QueryRunner interface {
+type db interface {
 	ExecContext(ctx context.Context, query string, args ...any) (int64, error)
 	QueryContext(ctx context.Context, query string, args ...any) ([]map[string]any, error)
 }
 
 type audioRepo struct {
-	db QueryRunner
+	db db
 }
 
 // NewAudioRepo creates a new audio repository using the given database.
-func NewAudioRepo(db QueryRunner) *audioRepo {
+func NewAudioRepo(db db) *audioRepo {
 	return &audioRepo{
 		db: db,
 	}
 }
 
 // GetAudio gets an audio record using the given id. Returns the audio record and the first error encountered.
-func (repo *audioRepo) GetAudio(ctx context.Context, id string) (audio.Audio, error) {
+func (repo *audioRepo) GetAudio(ctx context.Context, id string) (Audio, error) {
 	dbRows, err := repo.db.QueryContext(ctx,
 		`SELECT id, title, creator_id, file_url, version, status, created_at, updated_at 
 		 FROM audio 
 		 WHERE id = ? AND status = 'active'`, id)
 
 	if err != nil {
-		return audio.Audio{}, njnerror.Wrapf("audiorepo.GetAudio: failed to get audio: %w", err)
+		return Audio{}, njnerror.Wrapf("audiorepo.GetAudio: failed to get audio: %w", err)
 	}
 
 	if len(dbRows) == 0 {
-		return audio.Audio{}, njnerror.NewNJNError(njnerror.NotFound, "audiorepo.GetAudio: audio not found")
+		return Audio{}, njnerror.NewNJNError(njnerror.NotFound, "audiorepo.GetAudio: audio not found")
 	}
 
 	return toAudio(dbRows[0]), nil
 }
 
 // ToAudio converts a row a to an Audio.
-func toAudio(row map[string]any) audio.Audio {
-	return audio.Audio{
+func toAudio(row map[string]any) Audio {
+	title := row["title"].(string)
+	fileURL := row["file_url"].(string)
+
+	return Audio{
 		ID:        row["id"].(string),
 		CreatorID: row["creator_id"].(string),
-		Title:     row["title"].(string),
-		FileURL:   row["file_url"].(string),
+		Title:     &title,
+		FileURL:   &fileURL,
 		Version:   row["version"].(int64),
 		Status:    row["status"].(string),
 		CreatedAt: row["created_at"].(time.Time),
@@ -58,7 +60,7 @@ func toAudio(row map[string]any) audio.Audio {
 }
 
 // CreateAudio creates a new audio record using the given audio. Returns the first error encountered.
-func (repo *audioRepo) CreateAudio(ctx context.Context, audio audio.Audio) error {
+func (repo *audioRepo) CreateAudio(ctx context.Context, audio Audio) error {
 	_, err := repo.db.ExecContext(ctx,
 		`INSERT INTO audio (id, title, creator_id, file_url) 
 		VALUES (?, ?, ?, ?)`, audio.ID, audio.Title, audio.CreatorID, audio.FileURL)
@@ -71,7 +73,7 @@ func (repo *audioRepo) CreateAudio(ctx context.Context, audio audio.Audio) error
 }
 
 // UpdateAudio updates an audio record using the given audio. Returns the first error encountered.
-func (repo *audioRepo) UpdateAudio(ctx context.Context, audio audio.UpdateAudio, version int64) error {
+func (repo *audioRepo) UpdateAudio(ctx context.Context, audio Audio, version int64) error {
 	if audio.Title == nil && audio.FileURL == nil {
 		return nil
 	}

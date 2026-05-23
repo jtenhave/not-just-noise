@@ -3,11 +3,10 @@ package main
 import (
 	"flag"
 
-	"github.com/jtenhave/not-just-noise/audio-service/internal/audioing"
+	"github.com/jtenhave/not-just-noise/audio-service/internal/audio"
 	"github.com/jtenhave/not-just-noise/audio-service/internal/config"
-	"github.com/jtenhave/not-just-noise/audio-service/internal/infrastructure/notify"
-	"github.com/jtenhave/not-just-noise/audio-service/internal/infrastructure/repo"
-	"github.com/jtenhave/not-just-noise/lib/database/mysql"
+	"github.com/jtenhave/not-just-noise/audio-service/internal/transactionaloutbox"
+	"github.com/jtenhave/not-just-noise/lib/database"
 	"github.com/jtenhave/not-just-noise/lib/http"
 )
 
@@ -22,7 +21,7 @@ func main() {
 	}
 
 	// Create MySQL connection
-	mysql, err := mysql.NewConnectionQueryRunner(config.MySQL)
+	mysql, err := database.NewMySQLConnection(config.MySQL)
 	if err != nil {
 		panic(err)
 	}
@@ -37,19 +36,16 @@ func main() {
 	//snsPublisher := notify.NewSNSPublisher(awsConfig, config.SNS.TopicArn)
 
 	// Create audio repository
-	audioRepo := repo.NewConnectionRepository(mysql)
+	audioRepo := audio.NewAudioRepo(mysql)
 
-	// Create audio notifier
-	//audioNotifier := audioNotify.NewAudioNotifier(snsPublisher)
-
-	// Create audio notify formatter
-	audioNotifyFormatter := notify.NewAudioNotifyFormatter()
+	// Create transactional outbox repository
+	transactionalOutboxRepo := transactionaloutbox.NewTransactionalOutboxRepo(mysql)
 
 	// Create audio service
-	audioService := audioing.NewAudioService(audioRepo, audioNotifyFormatter)
+	audioService := audio.NewAudioService(mysql, audioRepo, transactionalOutboxRepo)
 
 	// Create audio routes
-	audioRoutes := audioing.CreateRoutes(audioService)
+	audioRoutes := audio.CreateRoutes(audioService)
 
 	// Start HTTP server
 	http.StartServer(audioRoutes, *portPtr)

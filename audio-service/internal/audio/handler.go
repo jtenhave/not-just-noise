@@ -1,4 +1,4 @@
-package audioing
+package audio
 
 import (
 	"context"
@@ -8,15 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jtenhave/not-just-noise/audio-service/internal/audio"
 	"github.com/jtenhave/not-just-noise/lib/http"
 	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
 type AudioService interface {
-	GetAudio(context context.Context, id string) (audio.Audio, error)
-	CreateAudio(context context.Context, audio audio.Audio) (string, error)
-	UpdateAudio(context context.Context, audio audio.UpdateAudio) error
+	GetAudio(context context.Context, id string) (Audio, error)
+	CreateAudio(context context.Context, audio Audio) (string, error)
+	UpdateAudio(context context.Context, audio Audio) error
 	DeleteAudio(context context.Context, id string) error
 }
 
@@ -62,12 +61,12 @@ type AudioResponse struct {
 }
 
 // ToAudioResponse converts the given audio to an AudioResponse.
-func toAudioResponse(audio audio.Audio) AudioResponse {
+func toAudioResponse(audio Audio) AudioResponse {
 	return AudioResponse{
 		ID:        audio.ID,
-		Title:     audio.Title,
+		Title:     *audio.Title,
 		Creator:   audio.CreatorID,
-		FileURL:   audio.FileURL,
+		FileURL:   *audio.FileURL,
 		CreatedAt: audio.CreatedAt,
 		UpdatedAt: audio.UpdatedAt,
 	}
@@ -99,11 +98,11 @@ type CreateAudioResponse struct {
 }
 
 // ToAudio converts the given createAudioRequest to an Audio.
-func (createAudioRequest CreateAudioRequest) ToAudio() audio.Audio {
-	return audio.Audio{
-		Title:     createAudioRequest.Title,
+func (createAudioRequest CreateAudioRequest) ToAudio() Audio {
+	return Audio{
+		Title:     &createAudioRequest.Title,
 		CreatorID: createAudioRequest.CreatorID,
-		FileURL:   createAudioRequest.FileURL,
+		FileURL:   &createAudioRequest.FileURL,
 	}
 }
 
@@ -170,9 +169,9 @@ func (updateAudioRequest UpdateAudioRequest) Validate() []string {
 	return errors
 }
 
-// ToPatchAudio converts the given updateAudioRequest to an UpdateAudio.
-func (updateAudioRequest UpdateAudioRequest) ToPatchAudio() audio.UpdateAudio {
-	return audio.UpdateAudio{
+// ToAudio converts the given updateAudioRequest to an Audio.
+func (updateAudioRequest UpdateAudioRequest) ToAudio() Audio {
+	return Audio{
 		Title:   updateAudioRequest.Title,
 		FileURL: updateAudioRequest.FileURL,
 	}
@@ -195,7 +194,7 @@ func updateAudioHandler(request http.Request, audioService AudioService) http.Re
 		return http.CreateErrorResponse(njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.updateAudioHandler: %s", strings.Join(errors, ", "))))
 	}
 
-	audio := updateAudioRequest.ToPatchAudio()
+	audio := updateAudioRequest.ToAudio()
 	audio.ID = id
 
 	err := audioService.UpdateAudio(request.Context, audio)
