@@ -1,21 +1,23 @@
-package audio
+package audioing
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"reflect"
 	"strings"
 	"time"
 
+	"github.com/jtenhave/not-just-noise/audio-service/internal/audio"
 	"github.com/jtenhave/not-just-noise/lib/http"
 	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
 type AudioService interface {
-	GetAudio(id string) (Audio, error)
-	CreateAudio(audio Audio) (string, error)
-	UpdateAudio(audio UpdateAudio) error
-	DeleteAudio(id string) error
+	GetAudio(context context.Context, id string) (audio.Audio, error)
+	CreateAudio(context context.Context, audio audio.Audio) (string, error)
+	UpdateAudio(context context.Context, audio audio.UpdateAudio) error
+	DeleteAudio(context context.Context, id string) error
 }
 
 const (
@@ -60,7 +62,7 @@ type AudioResponse struct {
 }
 
 // ToAudioResponse converts the given audio to an AudioResponse.
-func (audio Audio) ToAudioResponse() AudioResponse {
+func toAudioResponse(audio audio.Audio) AudioResponse {
 	return AudioResponse{
 		ID:        audio.ID,
 		Title:     audio.Title,
@@ -78,12 +80,12 @@ func getAudioHandler(request http.Request, audioService AudioService) http.Respo
 		return http.CreateErrorResponse(njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.getAudioHandler: %s", idIsRequired)))
 	}
 
-	audio, err := audioService.GetAudio(id)
+	audio, err := audioService.GetAudio(request.Context, id)
 	if err != nil {
 		return http.CreateErrorResponse(njnerror.Wrapf("audiohandler.getAudioHandler: failed to get audio: %w", err))
 	}
 
-	return http.CreateResponse(200, audio.ToAudioResponse())
+	return http.CreateResponse(200, toAudioResponse(audio))
 }
 
 type CreateAudioRequest struct {
@@ -97,8 +99,8 @@ type CreateAudioResponse struct {
 }
 
 // ToAudio converts the given createAudioRequest to an Audio.
-func (createAudioRequest CreateAudioRequest) ToAudio() Audio {
-	return Audio{
+func (createAudioRequest CreateAudioRequest) ToAudio() audio.Audio {
+	return audio.Audio{
 		Title:     createAudioRequest.Title,
 		CreatorID: createAudioRequest.CreatorID,
 		FileURL:   createAudioRequest.FileURL,
@@ -134,7 +136,7 @@ func createAudioHandler(request http.Request, audioService AudioService) http.Re
 		return http.CreateErrorResponse(njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.createAudioHandler: %s", strings.Join(errors, ", "))))
 	}
 
-	id, err := audioService.CreateAudio(createAudioRequest.ToAudio())
+	id, err := audioService.CreateAudio(request.Context, createAudioRequest.ToAudio())
 	if err != nil {
 		return http.CreateErrorResponse(njnerror.Wrapf("audiohandler.createAudioHandler: failed to create audio: %w", err))
 	}
@@ -169,8 +171,8 @@ func (updateAudioRequest UpdateAudioRequest) Validate() []string {
 }
 
 // ToPatchAudio converts the given updateAudioRequest to an UpdateAudio.
-func (updateAudioRequest UpdateAudioRequest) ToPatchAudio() UpdateAudio {
-	return UpdateAudio{
+func (updateAudioRequest UpdateAudioRequest) ToPatchAudio() audio.UpdateAudio {
+	return audio.UpdateAudio{
 		Title:   updateAudioRequest.Title,
 		FileURL: updateAudioRequest.FileURL,
 	}
@@ -196,7 +198,7 @@ func updateAudioHandler(request http.Request, audioService AudioService) http.Re
 	audio := updateAudioRequest.ToPatchAudio()
 	audio.ID = id
 
-	err := audioService.UpdateAudio(audio)
+	err := audioService.UpdateAudio(request.Context, audio)
 	if err != nil {
 		return http.CreateErrorResponse(njnerror.Wrapf("audiohandler.updateAudioHandler: failed to update audio: %w", err))
 	}
@@ -211,7 +213,7 @@ func deleteAudioHandler(request http.Request, audioService AudioService) http.Re
 		return http.CreateErrorResponse(njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.deleteAudioHandler: %s", idIsRequired)))
 	}
 
-	err := audioService.DeleteAudio(id)
+	err := audioService.DeleteAudio(request.Context, id)
 	if err != nil {
 		return http.CreateErrorResponse(njnerror.Wrapf("audiohandler.deleteAudioHandler: failed to delete audio: %w", err))
 	}

@@ -1,12 +1,14 @@
 package http
 
 import (
+	"context"
 	"reflect"
 
 	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
 type Request struct {
+	Context    context.Context
 	Body       interface{}
 	PathValues map[string]string
 }

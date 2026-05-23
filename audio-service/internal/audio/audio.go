@@ -18,3 +18,11 @@ type UpdateAudio struct {
 	Title   *string
 	FileURL *string
 }
+
+type AudioNotifierEventType string
+
+const (
+	AudioCreatedEvent AudioNotifierEventType = "CREATED"
+	AudioUpdatedEvent AudioNotifierEventType = "UPDATED"
+	AudioDeletedEvent AudioNotifierEventType = "DELETED"
+)

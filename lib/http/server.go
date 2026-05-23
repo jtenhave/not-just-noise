@@ -34,6 +34,7 @@ func StartServer(routes []Route, port int) error {
 			}
 
 			request := Request{
+				Context:    r.Context(),
 				PathValues: extractPathValues(route.Path, r),
 				Body:       body,
 			}
