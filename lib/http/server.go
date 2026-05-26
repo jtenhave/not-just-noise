@@ -1,14 +1,10 @@
 package http
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
 	"regexp"
-
-	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
 // StartServer starts the server using the given routes and port.
@@ -19,7 +15,10 @@ func StartServer(routes []Route, port int) error {
 		Method: "GET",
 		Path:   "/health",
 		Handler: func(request Request) Response {
-			return CreateResponse(204, nil)
+			return Response{
+				Code: 204,
+				Body: nil,
+			}
 		},
 	})
 
@@ -27,10 +26,9 @@ func StartServer(routes []Route, port int) error {
 	for _, route := range routes {
 		pattern := route.Method + " " + route.Path
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-			body, err := deserializeBody(route.BodyType, r.Body)
+			body, err := deserializeBody(r.Body)
 			if err != nil {
-				sendResponse(CreateErrorResponse(err), w)
-				return
+				panic(err)
 			}
 
 			request := Request{
@@ -64,48 +62,24 @@ func extractPathValues(path string, request *http.Request) map[string]string {
 }
 
 // deserializeBody deserializes a request body into a given bodyType
-func deserializeBody(bodyType reflect.Type, body io.Reader) (interface{}, error) {
-	if bodyType == nil {
-		return nil, nil
-	}
-
-	// Read the request body into a byte slice
+func deserializeBody(body io.Reader) (string, error) {
 	rawBody, err := io.ReadAll(body)
 	if err != nil {
-		return nil, fmt.Errorf("libhttp.deserializeBody: failed to read request body: %w", err)
+		return "", fmt.Errorf("libhttp.deserializeBody: failed to read request body: %w", err)
 	}
 
-	// Create a pointer to a new instance of the body type
-	bodyPointer := reflect.New(bodyType).Interface()
-
-	// Unmarshal the request body into the body pointer
-	err = json.Unmarshal(rawBody, bodyPointer)
-	if err != nil {
-		wrappedError := fmt.Errorf("libhttp.deserializeBody: failed to unmarshal request body: %w", err)
-		return nil, njnerror.NewNJNError(njnerror.BadRequest, wrappedError.Error())
-	}
-
-	// Dereference the body pointer to get the body value
-	bodyPointerValue := reflect.ValueOf(bodyPointer)
-	if bodyPointerValue.Kind() == reflect.Ptr {
-		return bodyPointerValue.Elem().Interface(), nil
-	} else {
-		return nil, fmt.Errorf("libhttp.deserializeBody: failed to dereference body pointer: %w", err)
-	}
+	return string(rawBody), nil
 }
 
 func sendResponse(response Response, w http.ResponseWriter) {
-	if response.Body() != nil {
-		body, err := json.Marshal(response.Body())
-		if err != nil {
-			http.Error(w, fmt.Errorf("libhttp.sendResponse: failed to marshal response body: %w", err).Error(), http.StatusInternalServerError)
-			return
-		}
+	for key, value := range response.Headers {
+		w.Header().Set(key, value)
+	}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(response.Code())
-		w.Write(body)
+	if response.Body != nil {
+		w.WriteHeader(response.Code)
+		w.Write([]byte(*response.Body))
 	} else {
-		w.WriteHeader(response.Code())
+		w.WriteHeader(response.Code)
 	}
 }
