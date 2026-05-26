@@ -19,7 +19,7 @@ type transactionalJobRepo struct {
 	db db
 }
 
-// NewAudioRepo creates a new audio repository using the given database.
+// NewTransactionalJobRepo creates a new transactional job repository using the given database.
 func NewTransactionalJobRepo(db db) *transactionalJobRepo {
 	return &transactionalJobRepo{
 		db: db,

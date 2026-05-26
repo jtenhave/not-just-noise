@@ -79,9 +79,15 @@ func (db *mysqlconnection) QueryContext(ctx context.Context, query string, args 
 	rawRows := make([]map[string]any, 0)
 	for rows.Next() {
 		row := make(map[string]any)
-		err = rows.StructScan(&row)
+		err = rows.MapScan(row)
 		if err != nil {
 			return nil, njnerror.Wrapf("libmysql.QueryContext: failed to scan row: %w", err)
+		}
+
+		for k, v := range row {
+			if b, ok := v.([]byte); ok {
+				row[k] = string(b)
+			}
 		}
 
 		rawRows = append(rawRows, row)
@@ -113,4 +119,9 @@ func (db *mysqlconnection) ExecContext(ctx context.Context, query string, args .
 	}
 
 	return rowsAffected, nil
+}
+
+func (db *mysqlconnection) IsTx(ctx context.Context) bool {
+	_, ok := ctx.Value(txID).(*sqlx.Tx)
+	return ok
 }
