@@ -2,10 +2,8 @@ package transactionaljob
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
-	"github.com/jtenhave/not-just-noise/lib/http"
 	"github.com/jtenhave/not-just-noise/lib/njnerror"
 	"github.com/jtenhave/not-just-noise/lib/utils"
 )
@@ -27,26 +25,22 @@ type TransactionalJobsRepo interface {
 	DeleteTransactionalJob(ctx context.Context, id string) error
 }
 
-type HTTPClient interface {
-	Post(ctx context.Context, url string, body interface{}) (http.Response, error)
+type TransactionalJobHandler interface {
+	Handle(ctx context.Context, destination string, payload string) error
 }
 
 type transactionalJobService struct {
 	transactionManager    TransactionManager
 	transactionalJobsRepo TransactionalJobsRepo
-	httpClient            HTTPClient
+	handlers              map[string]TransactionalJobHandler
 }
 
-type CallbackResponseBody struct {
-	Error string `json:"error"`
-}
-
-// NewTransactionalJobService creates a new transactionalJobService using the given transactionManager, transactionalJobsRepo, and httpClient.
-func NewTransactionalJobService(transactionManager TransactionManager, transactionalJobsRepo TransactionalJobsRepo, httpClient HTTPClient) transactionalJobService {
+// NewTransactionalJobService creates a new transactionalJobService using the given transactionManager, transactionalJobsRepo, and handlers.
+func NewTransactionalJobService(transactionManager TransactionManager, transactionalJobsRepo TransactionalJobsRepo, handlers map[string]TransactionalJobHandler) transactionalJobService {
 	return transactionalJobService{
 		transactionManager:    transactionManager,
 		transactionalJobsRepo: transactionalJobsRepo,
-		httpClient:            httpClient,
+		handlers:              handlers,
 	}
 }
 
@@ -86,32 +80,23 @@ func (transactionalJobService transactionalJobService) GetAvailableTransactional
 
 // SendTransactionalJob sends the given transactionalJob. Returns the first error encountered.
 func (transactionalJobService transactionalJobService) SendTransactionalJob(ctx context.Context, transactionalJob TransactionalJob) error {
-	response, err := transactionalJobService.httpClient.Post(ctx, transactionalJob.CallbackURL, transactionalJob.Payload)
 	var lastErrorMessage *string
-	if err != nil {
-		errorMessage := err.Error()
-		lastErrorMessage = &errorMessage
-	} else if response.Code != http.Ok && response.Code != http.NoContent {
-		errorMessage := "unknown error"
-		if response.Body != nil {
-			var callbackResponseBody CallbackResponseBody
-			err = json.Unmarshal([]byte(*response.Body), &callbackResponseBody)
-			if err != nil {
-				errorMessage = *response.Body
-			}
-	
-			errorMessage = callbackResponseBody.Error
+	handler, ok := transactionalJobService.handlers[transactionalJob.CallbackType]
+	if ok {
+		err := handler.Handle(ctx, transactionalJob.CallbackResource, transactionalJob.Payload)
+		if err != nil {
+			handlerErrorMessage := err.Error()
+			lastErrorMessage = &handlerErrorMessage
 		}
-
-		lastErrorMessage = &errorMessage
+	} else {
+		noHandlerError := fmt.Sprintf("transactionaljobservice.SendTransactionalJob no handler found for callback type: %s", transactionalJob.CallbackType)
+		lastErrorMessage = &noHandlerError
 	}
 
-	if lastErrorMessage != nil { 
-		errorMessage := fmt.Sprintf("callback returned code: %d, message: %s", response.Code, *lastErrorMessage)
-		
+	if lastErrorMessage != nil {
 		// Best effort retry. Worst case, the claim expires and the job can be processed again.
-		err = utils.Retry(ctx, func() error {
-			return transactionalJobService.transactionalJobsRepo.ReleaseTransactionalJob(ctx, transactionalJob.ID, errorMessage)
+		err := utils.Retry(ctx, func() error {
+			return transactionalJobService.transactionalJobsRepo.ReleaseTransactionalJob(ctx, transactionalJob.ID, *lastErrorMessage)
 		}, defaultMaxAttempts, defaultRetrySeconds, defaultRetryBackoff)
 
 		if err != nil {
@@ -122,7 +107,7 @@ func (transactionalJobService transactionalJobService) SendTransactionalJob(ctx 
 	}
 
 	// Best effort retry. Worst case, the job is processed again. Downstream services will handle idempotency.
-	err = utils.Retry(ctx, func() error {
+	err := utils.Retry(ctx, func() error {
 		return transactionalJobService.transactionalJobsRepo.DeleteTransactionalJob(ctx, transactionalJob.ID)
 	}, defaultMaxAttempts, defaultRetrySeconds, defaultRetryBackoff)
 

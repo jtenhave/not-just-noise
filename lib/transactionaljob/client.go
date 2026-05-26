@@ -30,8 +30,8 @@ func (client *transactionalJobClient) CreateTransactionalJob(ctx context.Context
 	}
 
 	_, err := client.db.ExecContext(ctx,
-		`INSERT INTO transactional_job_service.transactional_jobs (id, callback_url, payload, claim_timeout, retry_seconds, retry_backoff, max_attempts) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		transactionalJob.ID, transactionalJob.CallbackURL, transactionalJob.Payload, transactionalJob.ClaimTimeout, transactionalJob.RetrySeconds, transactionalJob.RetryBackoff, transactionalJob.MaxAttempts)
+		`INSERT INTO transactional_job_service.transactional_jobs (id, callback_type, callback_resource, payload, claim_timeout, retry_seconds, retry_backoff, max_attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		transactionalJob.ID, transactionalJob.CallbackType, transactionalJob.CallbackResource, transactionalJob.Payload, transactionalJob.ClaimTimeout, transactionalJob.RetrySeconds, transactionalJob.RetryBackoff, transactionalJob.MaxAttempts)
 
 	if err != nil {
 		return njnerror.Wrapf("transactionaljobrepo.CreateTransactionalJob: failed to create transactional job: %w", err)

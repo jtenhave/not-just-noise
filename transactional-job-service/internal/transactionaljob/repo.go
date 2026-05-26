@@ -33,7 +33,7 @@ func (repo *transactionalJobRepo) GetAvailableTransactionalJobs(ctx context.Cont
 	}
 
 	dbRows, err := repo.db.QueryContext(ctx,
-		`SELECT id, callback_url, payload
+		`SELECT id, callback_type, callback_resource, payload
 		 FROM transactional_jobs
 		 WHERE (processing_at IS NULL OR TIMESTAMPDIFF(SECOND, processing_at, NOW()) > claim_timeout) AND attempts < max_attempts AND available_at <= NOW()
 		 ORDER BY created_at ASC
@@ -65,7 +65,14 @@ func toTransactionalJob(row map[string]any) (TransactionalJob, error) {
 	if !ok {
 		return TransactionalJob{}, fmt.Errorf("transactionaljobrepo.toTransactionalJob: id is not a string")
 	}
-	callbackURL, ok := row["callback_url"].(string)
+	callbackType, ok := row["callback_type"].(string)
+	if !ok {
+		return TransactionalJob{}, fmt.Errorf("transactionaljobrepo.toTransactionalJob: callbackType is not a string")
+	}
+	callbackResource, ok := row["callback_resource"].(string)
+	if !ok {
+		return TransactionalJob{}, fmt.Errorf("transactionaljobrepo.toTransactionalJob: callbackResource is not a string")
+	}
 	if !ok {
 		return TransactionalJob{}, fmt.Errorf("transactionaljobrepo.toTransactionalJob: callbackURL is not a string")
 	}
@@ -75,9 +82,10 @@ func toTransactionalJob(row map[string]any) (TransactionalJob, error) {
 	}
 
 	return TransactionalJob{
-		ID:          id,
-		CallbackURL: callbackURL,
-		Payload:     payload,
+		ID:               id,
+		CallbackType:     callbackType,
+		CallbackResource: callbackResource,
+		Payload:          payload,
 	}, nil
 }
 

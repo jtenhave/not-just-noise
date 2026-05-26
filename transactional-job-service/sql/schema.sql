@@ -4,7 +4,8 @@ COLLATE utf8mb4_unicode_ci;
 
 CREATE TABLE transactional_jobs (
     id VARCHAR(128) NOT NULL,
-    callback_url VARCHAR(2048) NOT NULL,
+    callback_type VARCHAR(32) NOT NULL,
+    callback_resource VARCHAR(2048) NOT NULL,
     payload JSON NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     available_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

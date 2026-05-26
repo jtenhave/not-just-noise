@@ -56,9 +56,10 @@ func TestTransactionalJobRepo_GetAvailableTransactionalJobs_Success(t *testing.T
 
 	expectedValues := []map[string]any{
 		{
-			"id":           "123",
-			"callback_url": "https://test.com/callback",
-			"payload":      "payload",
+			"id":                "123",
+			"callback_type":     "notify",
+			"callback_resource": "https://test.com/callback",
+			"payload":           "payload",
 		},
 	}
 
@@ -68,6 +69,7 @@ func TestTransactionalJobRepo_GetAvailableTransactionalJobs_Success(t *testing.T
 	transactionalJobs, err := repo.GetAvailableTransactionalJobs(context.Background(), 10)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(transactionalJobs))
-	assert.Equal(t, "https://test.com/callback", transactionalJobs[0].CallbackURL)
+	assert.Equal(t, "notify", transactionalJobs[0].CallbackType)
+	assert.Equal(t, "https://test.com/callback", transactionalJobs[0].CallbackResource)
 	assert.Equal(t, "payload", transactionalJobs[0].Payload)
 }
