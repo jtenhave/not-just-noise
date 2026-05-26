@@ -1,0 +1,6 @@
+{
+    "max_workers": 10,
+    "max_batch_size": 100,
+    "no_job_delay": 10,
+    "job_buffer_size": 1000
+}
