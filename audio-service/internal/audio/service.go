@@ -2,10 +2,9 @@ package audio
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/google/uuid"
-	"github.com/jtenhave/not-just-noise/audio-service/internal/transactionaloutbox"
+	"github.com/jtenhave/not-just-noise/audio-service/internal/adapters"
 	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
@@ -16,34 +15,28 @@ type TransactionManager interface {
 type AudioRepo interface {
 	GetAudio(ctx context.Context, id string) (Audio, error)
 	CreateAudio(ctx context.Context, audio Audio) error
-	UpdateAudio(ctx context.Context, audio Audio, version int64) error
+	UpdateAudio(ctx context.Context, audio Audio) error
 	DeleteAudio(ctx context.Context, id string) error
 }
 
-type TransactionalOutboxRepo interface {
-	CreateTransactionalOutboxRecord(ctx context.Context, transactionalOutboxRecord transactionaloutbox.TransactionalOutboxRecord) error
+type AudioPublishAdpater interface {
+	PublishCreated(ctx context.Context, audio adapters.AudioPublishPayload) error
+	PublishUpdated(ctx context.Context, audio adapters.AudioPublishPayload) error
+	PublishDeleted(ctx context.Context, audio adapters.AudioPublishPayload) error
 }
 
-type audioNotifierEventType string
-
-const (
-	AudioCreatedEvent audioNotifierEventType = "CREATED"
-	AudioUpdatedEvent audioNotifierEventType = "UPDATED"
-	AudioDeletedEvent audioNotifierEventType = "DELETED"
-)
-
 type audioService struct {
-	transactionManager      TransactionManager
-	audioRepo               AudioRepo
-	transactionalOutboxRepo TransactionalOutboxRepo
+	transactionManager  TransactionManager
+	audioRepo           AudioRepo
+	audioPublishAdapter AudioPublishAdpater
 }
 
 // NewAudioService creates a new audioService using the given audioRepo and audioNotifier.
-func NewAudioService(transactionManager TransactionManager, audioRepo AudioRepo, transactionalOutboxRepo TransactionalOutboxRepo) audioService {
+func NewAudioService(transactionManager TransactionManager, audioRepo AudioRepo, audioPublishAdapter AudioPublishAdpater) audioService {
 	return audioService{
-		transactionManager:      transactionManager,
-		audioRepo:               audioRepo,
-		transactionalOutboxRepo: transactionalOutboxRepo,
+		transactionManager:  transactionManager,
+		audioRepo:           audioRepo,
+		audioPublishAdapter: audioPublishAdapter,
 	}
 }
 
@@ -61,21 +54,18 @@ func (audioService audioService) GetAudio(context context.Context, id string) (A
 func (audioService audioService) CreateAudio(ctx context.Context, audio Audio) (string, error) {
 	audio.ID = uuid.New().String()
 
-	transactionalOutboxRecord, err := audioService.createTransactionalOutboxRecord(AudioCreatedEvent, audio)
-	if err != nil {
-		return "", njnerror.Wrapf("audioservice.CreateAudio: failed to create transactional outbox record: %w", err)
-	}
-
-	err = audioService.transactionManager.WithinTx(ctx, func(ctx context.Context) error {
-		err = audioService.audioRepo.CreateAudio(ctx, audio)
+	audioPublishPayload := audioService.createAudioPublishPayload(audio)
+	err := audioService.transactionManager.WithinTx(ctx, func(ctx context.Context) error {
+		err := audioService.audioRepo.CreateAudio(ctx, audio)
 		if err != nil {
 			return njnerror.Wrapf("audioservice.CreateAudio: failed to create audio: %w", err)
 		}
 
-		err = audioService.transactionalOutboxRepo.CreateTransactionalOutboxRecord(ctx, transactionalOutboxRecord)
+		err = audioService.audioPublishAdapter.PublishCreated(ctx, audioPublishPayload)
 		if err != nil {
-			return njnerror.Wrapf("audioservice.CreateAudio: failed to create transactional outbox record: %w", err)
+			return njnerror.Wrapf("audioservice.CreateAudio: failed to publish created: %w", err)
 		}
+
 		return nil
 	})
 
@@ -88,34 +78,31 @@ func (audioService audioService) CreateAudio(ctx context.Context, audio Audio) (
 
 // UpdateAudio updates an audio record using the given audio. Returns the first error encountered.
 func (audioService audioService) UpdateAudio(ctx context.Context, audio Audio) error {
-	storedAudio, err := audioService.audioRepo.GetAudio(ctx, audio.ID)
+	audioToUpdate, err := audioService.audioRepo.GetAudio(ctx, audio.ID)
 	if err != nil {
 		return njnerror.Wrapf("audioservice.UpdateAudio: failed to get audio: %w", err)
 	}
 
-	storedAudio.Version++
 	if audio.Title != nil {
-		storedAudio.Title = audio.Title
+		audioToUpdate.Title = audio.Title
 	}
 
 	if audio.FileURL != nil {
-		storedAudio.FileURL = audio.FileURL
+		audioToUpdate.FileURL = audio.FileURL
 	}
 
-	transactionalOutboxRecord, err := audioService.createTransactionalOutboxRecord(AudioUpdatedEvent, storedAudio)
-	if err != nil {
-		return njnerror.Wrapf("audioservice.UpdateAudio: failed to create transactional outbox record: %w", err)
-	}
+	audioToUpdate.Version++
 
+	audioPublishPayload := audioService.createAudioPublishPayload(audioToUpdate)
 	err = audioService.transactionManager.WithinTx(ctx, func(ctx context.Context) error {
-		err = audioService.audioRepo.UpdateAudio(ctx, audio, storedAudio.Version)
+		err = audioService.audioRepo.UpdateAudio(ctx, audioToUpdate)
 		if err != nil {
 			return njnerror.Wrapf("audioservice.UpdateAudio: failed to update audio: %w", err)
 		}
 
-		err = audioService.transactionalOutboxRepo.CreateTransactionalOutboxRecord(ctx, transactionalOutboxRecord)
+		err = audioService.audioPublishAdapter.PublishUpdated(ctx, audioPublishPayload)
 		if err != nil {
-			return njnerror.Wrapf("audioservice.UpdateAudio: failed to create transactional outbox record: %w", err)
+			return njnerror.Wrapf("audioservice.UpdateAudio: failed to publish updated: %w", err)
 		}
 		return nil
 	})
@@ -129,28 +116,24 @@ func (audioService audioService) UpdateAudio(ctx context.Context, audio Audio) e
 
 // DeleteAudio deletes an audio record using the given id. Returns the first error encountered.
 func (audioService audioService) DeleteAudio(ctx context.Context, id string) error {
-	audio, err := audioService.audioRepo.GetAudio(ctx, id)
+	audioToDelete, err := audioService.audioRepo.GetAudio(ctx, id)
 	if err != nil {
 		return njnerror.Wrapf("audioservice.DeleteAudio: failed to get audio: %w", err)
 	}
 
-	audio.Version++
-	audio.Status = "deleted"
+	audioToDelete.Version++
+	audioToDelete.Status = "deleted"
 
-	transactionalOutboxRecord, err := audioService.createTransactionalOutboxRecord(AudioDeletedEvent, audio)
-	if err != nil {
-		return njnerror.Wrapf("audioservice.DeleteAudio: failed to create transactional outbox record: %w", err)
-	}
-
+	audioPublishPayload := audioService.createAudioPublishPayload(audioToDelete)
 	err = audioService.transactionManager.WithinTx(ctx, func(ctx context.Context) error {
 		err = audioService.audioRepo.DeleteAudio(ctx, id)
 		if err != nil {
 			return njnerror.Wrapf("audioservice.DeleteAudio: failed to delete audio: %w", err)
 		}
 
-		err = audioService.transactionalOutboxRepo.CreateTransactionalOutboxRecord(ctx, transactionalOutboxRecord)
+		err = audioService.audioPublishAdapter.PublishDeleted(ctx, audioPublishPayload)
 		if err != nil {
-			return njnerror.Wrapf("audioservice.DeleteAudio: failed to create transactional outbox record: %w", err)
+			return njnerror.Wrapf("audioservice.DeleteAudio: failed to publish deleted: %w", err)
 		}
 		return nil
 	})
@@ -162,23 +145,18 @@ func (audioService audioService) DeleteAudio(ctx context.Context, id string) err
 	return nil
 }
 
-func (audioService audioService) createTransactionalOutboxRecord(eventType audioNotifierEventType, audio Audio) (transactionaloutbox.TransactionalOutboxRecord, error) {
-	payload := map[string]any{
-		"event_type": eventType,
-		"audio_id":   audio.ID,
-		"title":      *audio.Title,
-		"file_url":   *audio.FileURL,
-		"version":    audio.Version,
-		"status":     audio.Status,
+// createAudioPublishPayload creates a new audio publish payload for the given audio.
+func (audioService audioService) createAudioPublishPayload(audio Audio) adapters.AudioPublishPayload {
+	status := "active"
+	if audio.Status != "" {
+		status = audio.Status
 	}
 
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return transactionaloutbox.TransactionalOutboxRecord{}, njnerror.Wrapf("audioservice.CreateTransactionalOutboxRecord: failed to create notify payload: %w", err)
+	return adapters.AudioPublishPayload{
+		ID:      audio.ID,
+		Title:   audio.Title,
+		FileURL: audio.FileURL,
+		Version: audio.Version,
+		Status:  status,
 	}
-
-	return transactionaloutbox.TransactionalOutboxRecord{
-		ID:      uuid.New().String(),
-		Payload: string(payloadJSON),
-	}, nil
 }

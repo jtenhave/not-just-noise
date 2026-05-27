@@ -73,7 +73,7 @@ func (repo *audioRepo) CreateAudio(ctx context.Context, audio Audio) error {
 }
 
 // UpdateAudio updates an audio record using the given audio. Returns the first error encountered.
-func (repo *audioRepo) UpdateAudio(ctx context.Context, audio Audio, version int64) error {
+func (repo *audioRepo) UpdateAudio(ctx context.Context, audio Audio) error {
 	if audio.Title == nil && audio.FileURL == nil {
 		return nil
 	}
@@ -92,7 +92,7 @@ func (repo *audioRepo) UpdateAudio(ctx context.Context, audio Audio, version int
 		args = append(args, *audio.FileURL)
 	}
 
-	args = append(args, audio.ID, version)
+	args = append(args, audio.ID, audio.Version-1)
 
 	updates = append(updates, "version = version + 1")
 	query += strings.Join(updates, ", ") + " WHERE id = ? AND version = ? AND status = 'active'"

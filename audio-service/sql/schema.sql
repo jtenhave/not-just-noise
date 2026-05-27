@@ -14,10 +14,3 @@ CREATE TABLE audio_service.audio (
     PRIMARY KEY (`id`)
     CONSTRAINT title_unique UNIQUE (creator_id, title)
 ) ENGINE=INNODB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE transactional_outbox (
-    id VARCHAR(128) NOT NULL,
-    payload JSON NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`)
-) ENGINE=INNODB DEFAULT CHARSET=utf8mb4;

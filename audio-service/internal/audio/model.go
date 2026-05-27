@@ -12,3 +12,8 @@ type Audio struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
+
+type AudioPublishEvent struct {
+	Audio     Audio
+	EventType string
+}
