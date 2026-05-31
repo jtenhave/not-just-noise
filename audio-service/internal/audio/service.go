@@ -2,13 +2,15 @@ package audio
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/google/uuid"
-	"github.com/jtenhave/not-just-noise/audio-service/internal/adapters"
+	audioContract "github.com/jtenhave/not-just-noise/contracts/audio"
+	"github.com/jtenhave/not-just-noise/contracts/dispatch"
 	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
-type TransactionManager interface {
+type TxManager interface {
 	WithinTx(ctx context.Context, transaction func(context.Context) error) error
 }
 
@@ -16,27 +18,27 @@ type AudioRepo interface {
 	GetAudio(ctx context.Context, id string) (Audio, error)
 	CreateAudio(ctx context.Context, audio Audio) error
 	UpdateAudio(ctx context.Context, audio Audio) error
-	DeleteAudio(ctx context.Context, id string) error
+	DeleteAudio(ctx context.Context, id string) (int64, error)
 }
 
-type AudioPublishAdpater interface {
-	PublishCreated(ctx context.Context, audio adapters.AudioPublishPayload) error
-	PublishUpdated(ctx context.Context, audio adapters.AudioPublishPayload) error
-	PublishDeleted(ctx context.Context, audio adapters.AudioPublishPayload) error
+type DispatchClient interface {
+	Dispatch(ctx context.Context, dispatch dispatch.Dispatch) error
 }
 
 type audioService struct {
-	transactionManager  TransactionManager
+	txManager           TxManager
 	audioRepo           AudioRepo
-	audioPublishAdapter AudioPublishAdpater
+	dispatchClient      DispatchClient
+	dispatchDestination string
 }
 
 // NewAudioService creates a new audioService using the given audioRepo and audioNotifier.
-func NewAudioService(transactionManager TransactionManager, audioRepo AudioRepo, audioPublishAdapter AudioPublishAdpater) audioService {
+func NewAudioService(txManager TxManager, audioRepo AudioRepo, dispatchClient DispatchClient, dispatchDestination string) audioService {
 	return audioService{
-		transactionManager:  transactionManager,
+		txManager:           txManager,
 		audioRepo:           audioRepo,
-		audioPublishAdapter: audioPublishAdapter,
+		dispatchClient:      dispatchClient,
+		dispatchDestination: dispatchDestination,
 	}
 }
 
@@ -54,16 +56,15 @@ func (audioService audioService) GetAudio(context context.Context, id string) (A
 func (audioService audioService) CreateAudio(ctx context.Context, audio Audio) (string, error) {
 	audio.ID = uuid.New().String()
 
-	audioPublishPayload := audioService.createAudioPublishPayload(audio)
-	err := audioService.transactionManager.WithinTx(ctx, func(ctx context.Context) error {
+	err := audioService.txManager.WithinTx(ctx, func(ctx context.Context) error {
 		err := audioService.audioRepo.CreateAudio(ctx, audio)
 		if err != nil {
 			return njnerror.Wrapf("audioservice.CreateAudio: failed to create audio: %w", err)
 		}
 
-		err = audioService.audioPublishAdapter.PublishCreated(ctx, audioPublishPayload)
+		err = audioService.raiseAudioChangedEvent(ctx, audioContract.AudioChangedEventTypeCreated, audio)
 		if err != nil {
-			return njnerror.Wrapf("audioservice.CreateAudio: failed to publish created: %w", err)
+			return njnerror.Wrapf("audioservice.CreateAudio: failed to raise audio created event: %w", err)
 		}
 
 		return nil
@@ -91,18 +92,17 @@ func (audioService audioService) UpdateAudio(ctx context.Context, audio Audio) e
 		audioToUpdate.FileURL = audio.FileURL
 	}
 
-	audioToUpdate.Version++
-
-	audioPublishPayload := audioService.createAudioPublishPayload(audioToUpdate)
-	err = audioService.transactionManager.WithinTx(ctx, func(ctx context.Context) error {
+	err = audioService.txManager.WithinTx(ctx, func(ctx context.Context) error {
 		err = audioService.audioRepo.UpdateAudio(ctx, audioToUpdate)
 		if err != nil {
 			return njnerror.Wrapf("audioservice.UpdateAudio: failed to update audio: %w", err)
 		}
 
-		err = audioService.audioPublishAdapter.PublishUpdated(ctx, audioPublishPayload)
+		audioToUpdate.Version++
+
+		err = audioService.raiseAudioChangedEvent(ctx, audioContract.AudioChangedEventTypeUpdated, audioToUpdate)
 		if err != nil {
-			return njnerror.Wrapf("audioservice.UpdateAudio: failed to publish updated: %w", err)
+			return njnerror.Wrapf("audioservice.UpdateAudio: failed to raise audio updated event: %w", err)
 		}
 		return nil
 	})
@@ -124,16 +124,17 @@ func (audioService audioService) DeleteAudio(ctx context.Context, id string) err
 	audioToDelete.Version++
 	audioToDelete.Status = "deleted"
 
-	audioPublishPayload := audioService.createAudioPublishPayload(audioToDelete)
-	err = audioService.transactionManager.WithinTx(ctx, func(ctx context.Context) error {
-		err = audioService.audioRepo.DeleteAudio(ctx, id)
+	err = audioService.txManager.WithinTx(ctx, func(ctx context.Context) error {
+		version, err := audioService.audioRepo.DeleteAudio(ctx, id)
 		if err != nil {
 			return njnerror.Wrapf("audioservice.DeleteAudio: failed to delete audio: %w", err)
 		}
+		
+		audioToDelete.Version = version
 
-		err = audioService.audioPublishAdapter.PublishDeleted(ctx, audioPublishPayload)
+		err = audioService.raiseAudioChangedEvent(ctx, audioContract.AudioChangedEventTypeDeleted, audioToDelete)
 		if err != nil {
-			return njnerror.Wrapf("audioservice.DeleteAudio: failed to publish deleted: %w", err)
+			return njnerror.Wrapf("audioservice.DeleteAudio: failed to raise audio deleted event: %w", err)
 		}
 		return nil
 	})
@@ -145,18 +146,33 @@ func (audioService audioService) DeleteAudio(ctx context.Context, id string) err
 	return nil
 }
 
-// createAudioPublishPayload creates a new audio publish payload for the given audio.
-func (audioService audioService) createAudioPublishPayload(audio Audio) adapters.AudioPublishPayload {
-	status := "active"
-	if audio.Status != "" {
-		status = audio.Status
+// raiseAudioChangedEvent raises a new audio changed event for the given audio and event type. Returns the first error encountered.
+func (audioService *audioService) raiseAudioChangedEvent(ctx context.Context, eventType audioContract.AudioChangedEventType, audio Audio) error {
+	audioChangedEvent := audioContract.AudioChangedEvent{
+		ID:        audio.ID,
+		Title:     audio.Title,
+		FileURL:   audio.FileURL,
+		Version:   audio.Version,
+		Status:    audio.Status,
+		EventType: eventType,
 	}
 
-	return adapters.AudioPublishPayload{
-		ID:      audio.ID,
-		Title:   audio.Title,
-		FileURL: audio.FileURL,
-		Version: audio.Version,
-		Status:  status,
+	payloadJSON, err := json.Marshal(audioChangedEvent)
+	if err != nil {
+		return njnerror.Wrapf("audioservice.raiseAudioChangedEvent: failed to create audio changed event payload: %w", err)
 	}
+
+	dispatch := dispatch.Dispatch{
+		ID:               uuid.New().String(),
+		CallbackType:     dispatch.CallbackTypeNotify,
+		CallbackResource: audioService.dispatchDestination,
+		Payload:          string(payloadJSON),
+	}
+
+	err = audioService.dispatchClient.Dispatch(ctx, dispatch)
+	if err != nil {
+		return njnerror.Wrapf("audioservice.raiseAudioChangedEvent: failed to dispatch audio changed event: %w", err)
+	}
+
+	return nil
 }

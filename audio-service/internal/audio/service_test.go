@@ -2,14 +2,18 @@ package audio
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
-	"github.com/jtenhave/not-just-noise/audio-service/internal/adapters"
+	audioContract "github.com/jtenhave/not-just-noise/contracts/audio"
+	"github.com/jtenhave/not-just-noise/contracts/dispatch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+const testDispatchDestination = "audio-changed"
 
 type transactionManagerMock struct {
 	mock.Mock
@@ -65,42 +69,23 @@ func (m *audioRepoMock) UpdateAudio(ctx context.Context, audio Audio) error {
 	return err
 }
 
-func (m *audioRepoMock) DeleteAudio(ctx context.Context, id string) error {
+func (m *audioRepoMock) DeleteAudio(ctx context.Context, id string) (int64, error) {
 	arguments := m.Called(ctx, id)
 
 	var err error
-	if e := arguments.Get(0); e != nil {
+	if e := arguments.Get(1); e != nil {
 		err = e.(error)
 	}
-	return err
+
+	return arguments.Get(0).(int64), err
 }
 
-type audioPublishAdapterMock struct {
+type dispatchClientMock struct {
 	mock.Mock
 }
 
-func (m *audioPublishAdapterMock) PublishCreated(ctx context.Context, audio adapters.AudioPublishPayload) error {
-	arguments := m.Called(ctx, audio)
-
-	var err error
-	if e := arguments.Get(0); e != nil {
-		err = e.(error)
-	}
-	return err
-}
-
-func (m *audioPublishAdapterMock) PublishUpdated(ctx context.Context, audio adapters.AudioPublishPayload) error {
-	arguments := m.Called(ctx, audio)
-
-	var err error
-	if e := arguments.Get(0); e != nil {
-		err = e.(error)
-	}
-	return err
-}
-
-func (m *audioPublishAdapterMock) PublishDeleted(ctx context.Context, audio adapters.AudioPublishPayload) error {
-	arguments := m.Called(ctx, audio)
+func (m *dispatchClientMock) Dispatch(ctx context.Context, dispatch dispatch.Dispatch) error {
+	arguments := m.Called(ctx, dispatch)
 
 	var err error
 	if e := arguments.Get(0); e != nil {
@@ -112,9 +97,9 @@ func (m *audioPublishAdapterMock) PublishDeleted(ctx context.Context, audio adap
 func TestAudioService_GetAudio_RepoError(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	repo.On("GetAudio", mock.Anything, "123").Return(Audio{}, errors.New("db down"))
 
@@ -127,9 +112,9 @@ func TestAudioService_GetAudio_RepoError(t *testing.T) {
 func TestAudioService_GetAudio_Success(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	title := "Test Title"
 	fileURL := "https://test.com/test.mp3"
@@ -154,9 +139,9 @@ func TestAudioService_GetAudio_Success(t *testing.T) {
 func TestAudioService_CreateAudio_RepoError(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	title := "Test Title"
 	fileURL := "https://test.com/test.mp3"
@@ -172,17 +157,17 @@ func TestAudioService_CreateAudio_RepoError(t *testing.T) {
 	_, err := service.CreateAudio(context.Background(), audio)
 	assert.Error(t, err)
 
-	publishAdapter.AssertNotCalled(t, "PublishCreated")
+	dispatchClient.AssertNotCalled(t, "Dispatch")
 	tm.AssertExpectations(t)
 	repo.AssertExpectations(t)
 }
 
-func TestAudioService_CreateAudio_PublishError(t *testing.T) {
+func TestAudioService_CreateAudio_DispatchError(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	title := "Test Title"
 	fileURL := "https://test.com/test.mp3"
@@ -194,22 +179,22 @@ func TestAudioService_CreateAudio_PublishError(t *testing.T) {
 
 	tm.On("WithinTx", mock.Anything, mock.Anything).Return(nil)
 	repo.On("CreateAudio", mock.Anything, mock.Anything).Return(nil)
-	publishAdapter.On("PublishCreated", mock.Anything, mock.Anything).Return(errors.New("publish failed"))
+	dispatchClient.On("Dispatch", mock.Anything, mock.Anything).Return(errors.New("dispatch failed"))
 
 	_, err := service.CreateAudio(context.Background(), audio)
 	assert.Error(t, err)
 
 	tm.AssertExpectations(t)
 	repo.AssertExpectations(t)
-	publishAdapter.AssertExpectations(t)
+	dispatchClient.AssertExpectations(t)
 }
 
 func TestAudioService_CreateAudio_Success(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	title := "Test Title"
 	fileURL := "https://test.com/test.mp3"
@@ -233,12 +218,18 @@ func TestAudioService_CreateAudio_Success(t *testing.T) {
 		}).
 		Return(nil)
 
-	publishAdapter.On("PublishCreated", mock.Anything, mock.Anything).
+	dispatchClient.On("Dispatch", mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
-			payload := args.Get(1).(adapters.AudioPublishPayload)
-			assert.Equal(t, id, payload.ID)
-			assert.Equal(t, title, *payload.Title)
-			assert.Equal(t, fileURL, *payload.FileURL)
+			d := args.Get(1).(dispatch.Dispatch)
+			assert.Equal(t, dispatch.CallbackTypeNotify, d.CallbackType)
+			assert.Equal(t, testDispatchDestination, d.CallbackResource)
+
+			var event audioContract.AudioChangedEvent
+			assert.NoError(t, json.Unmarshal([]byte(d.Payload), &event))
+			assert.Equal(t, audioContract.AudioChangedEventTypeCreated, event.EventType)
+			assert.Equal(t, id, event.ID)
+			assert.Equal(t, title, *event.Title)
+			assert.Equal(t, fileURL, *event.FileURL)
 		}).
 		Return(nil)
 
@@ -248,15 +239,15 @@ func TestAudioService_CreateAudio_Success(t *testing.T) {
 
 	tm.AssertExpectations(t)
 	repo.AssertExpectations(t)
-	publishAdapter.AssertExpectations(t)
+	dispatchClient.AssertExpectations(t)
 }
 
 func TestAudioService_UpdateAudio_GetError(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	newTitle := "New Title"
 	updateAudio := Audio{
@@ -277,9 +268,9 @@ func TestAudioService_UpdateAudio_GetError(t *testing.T) {
 func TestAudioService_UpdateAudio_RepoError(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	existingTitle := "Old Title"
 	existingFileURL := "https://test.com/old.mp3"
@@ -297,25 +288,29 @@ func TestAudioService_UpdateAudio_RepoError(t *testing.T) {
 		Title: &newTitle,
 	}
 
+	expectedAudioToUpdate := existingAudio
+	expectedAudioToUpdate.Title = &newTitle
+	expectedAudioToUpdate.Version = 1
+
 	repo.On("GetAudio", mock.Anything, "123").Return(existingAudio, nil)
 	tm.On("WithinTx", mock.Anything, mock.Anything).Return(nil)
-	repo.On("UpdateAudio", mock.Anything, updateAudio).Return(errors.New("update failed"))
+	repo.On("UpdateAudio", mock.Anything, expectedAudioToUpdate).Return(errors.New("update failed"))
 
 	err := service.UpdateAudio(context.Background(), updateAudio)
 	assert.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "failed to update audio"))
 
-	publishAdapter.AssertNotCalled(t, "PublishUpdated")
+	dispatchClient.AssertNotCalled(t, "Dispatch")
 	tm.AssertExpectations(t)
 	repo.AssertExpectations(t)
 }
 
-func TestAudioService_UpdateAudio_PublishError(t *testing.T) {
+func TestAudioService_UpdateAudio_DispatchError(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	existingTitle := "Old Title"
 	existingFileURL := "https://test.com/old.mp3"
@@ -333,26 +328,30 @@ func TestAudioService_UpdateAudio_PublishError(t *testing.T) {
 		Title: &newTitle,
 	}
 
+	expectedAudioToUpdate := existingAudio
+	expectedAudioToUpdate.Title = &newTitle
+	expectedAudioToUpdate.Version = 1
+
 	repo.On("GetAudio", mock.Anything, "123").Return(existingAudio, nil)
 	tm.On("WithinTx", mock.Anything, mock.Anything).Return(nil)
-	repo.On("UpdateAudio", mock.Anything, updateAudio).Return(nil)
-	publishAdapter.On("PublishUpdated", mock.Anything, mock.Anything).Return(errors.New("publish failed"))
+	repo.On("UpdateAudio", mock.Anything, expectedAudioToUpdate).Return(nil)
+	dispatchClient.On("Dispatch", mock.Anything, mock.Anything).Return(errors.New("dispatch failed"))
 
 	err := service.UpdateAudio(context.Background(), updateAudio)
 	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "failed to publish updated"))
+	assert.True(t, strings.Contains(err.Error(), "failed to raise audio updated event"))
 
 	tm.AssertExpectations(t)
 	repo.AssertExpectations(t)
-	publishAdapter.AssertExpectations(t)
+	dispatchClient.AssertExpectations(t)
 }
 
 func TestAudioService_UpdateAudio_Success(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	existingTitle := "Old Title"
 	existingFileURL := "https://test.com/old.mp3"
@@ -370,15 +369,25 @@ func TestAudioService_UpdateAudio_Success(t *testing.T) {
 		Title: &newTitle,
 	}
 
+	expectedAudioToUpdate := existingAudio
+	expectedAudioToUpdate.Title = &newTitle
+	expectedAudioToUpdate.Version = 1
+
 	repo.On("GetAudio", mock.Anything, "123").Return(existingAudio, nil)
 	tm.On("WithinTx", mock.Anything, mock.Anything).Return(nil)
-	repo.On("UpdateAudio", mock.Anything, updateAudio).Return(nil)
+	repo.On("UpdateAudio", mock.Anything, expectedAudioToUpdate).Return(nil)
 
-	publishAdapter.On("PublishUpdated", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-		payload := args.Get(1).(adapters.AudioPublishPayload)
-		assert.Equal(t, "123", payload.ID)
-		assert.Equal(t, newTitle, *payload.Title)
-		assert.Equal(t, int64(2), payload.Version)
+	dispatchClient.On("Dispatch", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		d := args.Get(1).(dispatch.Dispatch)
+		assert.Equal(t, dispatch.CallbackTypeNotify, d.CallbackType)
+		assert.Equal(t, testDispatchDestination, d.CallbackResource)
+
+		var event audioContract.AudioChangedEvent
+		assert.NoError(t, json.Unmarshal([]byte(d.Payload), &event))
+		assert.Equal(t, audioContract.AudioChangedEventTypeUpdated, event.EventType)
+		assert.Equal(t, "123", event.ID)
+		assert.Equal(t, newTitle, *event.Title)
+		assert.Equal(t, int64(2), event.Version)
 	}).Return(nil)
 
 	err := service.UpdateAudio(context.Background(), updateAudio)
@@ -386,15 +395,15 @@ func TestAudioService_UpdateAudio_Success(t *testing.T) {
 
 	tm.AssertExpectations(t)
 	repo.AssertExpectations(t)
-	publishAdapter.AssertExpectations(t)
+	dispatchClient.AssertExpectations(t)
 }
 
 func TestAudioService_DeleteAudio_GetError(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	repo.On("GetAudio", mock.Anything, "123").Return(Audio{}, errors.New("not found"))
 
@@ -410,9 +419,9 @@ func TestAudioService_DeleteAudio_GetError(t *testing.T) {
 func TestAudioService_DeleteAudio_RepoError(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	title := "Test Title"
 	fileURL := "https://test.com/test.mp3"
@@ -427,23 +436,23 @@ func TestAudioService_DeleteAudio_RepoError(t *testing.T) {
 
 	repo.On("GetAudio", mock.Anything, "123").Return(existingAudio, nil)
 	tm.On("WithinTx", mock.Anything, mock.Anything).Return(nil)
-	repo.On("DeleteAudio", mock.Anything, "123").Return(errors.New("delete failed"))
+	repo.On("DeleteAudio", mock.Anything, "123").Return(int64(0), errors.New("delete failed"))
 
 	err := service.DeleteAudio(context.Background(), "123")
 	assert.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "failed to delete audio"))
 
-	publishAdapter.AssertNotCalled(t, "PublishDeleted")
+	dispatchClient.AssertNotCalled(t, "Dispatch")
 	tm.AssertExpectations(t)
 	repo.AssertExpectations(t)
 }
 
-func TestAudioService_DeleteAudio_PublishError(t *testing.T) {
+func TestAudioService_DeleteAudio_DispatchError(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	title := "Test Title"
 	fileURL := "https://test.com/test.mp3"
@@ -458,24 +467,24 @@ func TestAudioService_DeleteAudio_PublishError(t *testing.T) {
 
 	repo.On("GetAudio", mock.Anything, "123").Return(existingAudio, nil)
 	tm.On("WithinTx", mock.Anything, mock.Anything).Return(nil)
-	repo.On("DeleteAudio", mock.Anything, "123").Return(nil)
-	publishAdapter.On("PublishDeleted", mock.Anything, mock.Anything).Return(errors.New("publish failed"))
+	repo.On("DeleteAudio", mock.Anything, "123").Return(int64(2), nil)
+	dispatchClient.On("Dispatch", mock.Anything, mock.Anything).Return(errors.New("dispatch failed"))
 
 	err := service.DeleteAudio(context.Background(), "123")
 	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "failed to publish deleted"))
+	assert.True(t, strings.Contains(err.Error(), "failed to raise audio deleted event"))
 
 	tm.AssertExpectations(t)
 	repo.AssertExpectations(t)
-	publishAdapter.AssertExpectations(t)
+	dispatchClient.AssertExpectations(t)
 }
 
 func TestAudioService_DeleteAudio_Success(t *testing.T) {
 	tm := new(transactionManagerMock)
 	repo := new(audioRepoMock)
-	publishAdapter := new(audioPublishAdapterMock)
+	dispatchClient := new(dispatchClientMock)
 
-	service := NewAudioService(tm, repo, publishAdapter)
+	service := NewAudioService(tm, repo, dispatchClient, testDispatchDestination)
 
 	title := "Test Title"
 	fileURL := "https://test.com/test.mp3"
@@ -490,12 +499,18 @@ func TestAudioService_DeleteAudio_Success(t *testing.T) {
 
 	repo.On("GetAudio", mock.Anything, "123").Return(existingAudio, nil)
 	tm.On("WithinTx", mock.Anything, mock.Anything).Return(nil)
-	repo.On("DeleteAudio", mock.Anything, "123").Return(nil)
-	publishAdapter.On("PublishDeleted", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-		payload := args.Get(1).(adapters.AudioPublishPayload)
-		assert.Equal(t, "123", payload.ID)
-		assert.Equal(t, "deleted", payload.Status)
-		assert.Equal(t, int64(2), payload.Version)
+	repo.On("DeleteAudio", mock.Anything, "123").Return(int64(2), nil)
+	dispatchClient.On("Dispatch", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		d := args.Get(1).(dispatch.Dispatch)
+		assert.Equal(t, dispatch.CallbackTypeNotify, d.CallbackType)
+		assert.Equal(t, testDispatchDestination, d.CallbackResource)
+
+		var event audioContract.AudioChangedEvent
+		assert.NoError(t, json.Unmarshal([]byte(d.Payload), &event))
+		assert.Equal(t, audioContract.AudioChangedEventTypeDeleted, event.EventType)
+		assert.Equal(t, "123", event.ID)
+		assert.Equal(t, "deleted", event.Status)
+		assert.Equal(t, int64(2), event.Version)
 	}).Return(nil)
 
 	err := service.DeleteAudio(context.Background(), "123")
@@ -503,5 +518,5 @@ func TestAudioService_DeleteAudio_Success(t *testing.T) {
 
 	tm.AssertExpectations(t)
 	repo.AssertExpectations(t)
-	publishAdapter.AssertExpectations(t)
+	dispatchClient.AssertExpectations(t)
 }

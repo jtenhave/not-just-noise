@@ -92,7 +92,7 @@ func (repo *audioRepo) UpdateAudio(ctx context.Context, audio Audio) error {
 		args = append(args, *audio.FileURL)
 	}
 
-	args = append(args, audio.ID, audio.Version-1)
+	args = append(args, audio.ID, audio.Version)
 
 	updates = append(updates, "version = version + 1")
 	query += strings.Join(updates, ", ") + " WHERE id = ? AND version = ? AND status = 'active'"
@@ -110,7 +110,7 @@ func (repo *audioRepo) UpdateAudio(ctx context.Context, audio Audio) error {
 }
 
 // DeleteAudio deletes an audio record using the given id. Returns the first error encountered.
-func (repo *audioRepo) DeleteAudio(ctx context.Context, id string) error {
+func (repo *audioRepo) DeleteAudio(ctx context.Context, id string) (int64, error) {
 	// Delete should always succeed, so we don't check for version in this case.
 	query := `UPDATE audio SET 
 		version = version + 1,
@@ -119,8 +119,21 @@ func (repo *audioRepo) DeleteAudio(ctx context.Context, id string) error {
 
 	_, err := repo.db.ExecContext(ctx, query, id)
 	if err != nil {
-		return njnerror.Wrapf("audiorepo.DeleteAudio: failed to delete audio: %w", err)
+		return 0, njnerror.Wrapf("audiorepo.DeleteAudio: failed to delete audio: %w", err)
 	}
 
-	return nil
+	dbRows, err := repo.db.QueryContext(ctx,
+		`SELECT version
+		 FROM audio 
+		 WHERE id = ?`, id)
+
+	if err != nil {
+		return 0, njnerror.Wrapf("audiorepo.GetAudio: failed to get audio: %w", err)
+	}
+
+	if len(dbRows) == 0 {
+		return 0, njnerror.NewNJNError(njnerror.NotFound, "audiorepo.DeleteAudio: audio not found")
+	}
+
+	return dbRows[0]["version"].(int64), nil
 }

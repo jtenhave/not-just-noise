@@ -4,38 +4,30 @@ import (
 	"fmt"
 
 	"github.com/jtenhave/not-just-noise/lib/config"
-	"github.com/jtenhave/not-just-noise/lib/database"
 )
 
-const mysqlConfigPath = "mysql.json"
-const servicesConfigPath = "services.json"
-const snsConfigPath = "sns.json"
-
-type SNSConfig struct {
-	TopicArn string `json:"topic_arn"`
-}
+const configPath = "config.json"
 
 type Config struct {
-	MySQL database.MySQLConfig
-	SNS   SNSConfig
+	MySQL struct {
+		Host     string `json:"host"`
+		Port     int    `json:"port"`
+		User     string `json:"user"`
+		Password string `json:"password"`
+		DBName   string `json:"db_name"`
+	} `json:"mysql"`
+	SNS struct {
+		TopicArn string `json:"topic_arn"`
+	} `json:"sns"`
 }
 
 // LoadConfig loads the config from the given path. Returns the config and the first error encountered.
 func LoadConfig(path string) (Config, error) {
-	var mySQLConfig database.MySQLConfig
-	err := config.LoadJsonFile(fmt.Sprintf("%s%s", path, mysqlConfigPath), &mySQLConfig)
+	var cgf Config
+	err := config.LoadJsonFile(fmt.Sprintf("%s%s", path, configPath), &cgf)
 	if err != nil {
 		return Config{}, fmt.Errorf("failed to load mysql config: %w", err)
 	}
 
-	var snsConfig SNSConfig
-	err = config.LoadJsonFile(fmt.Sprintf("%s%s", path, snsConfigPath), &snsConfig)
-	if err != nil {
-		return Config{}, fmt.Errorf("failed to load sns config: %w", err)
-	}
-
-	return Config{
-		MySQL: mySQLConfig,
-		SNS:   snsConfig,
-	}, nil
+	return cgf, nil
 }

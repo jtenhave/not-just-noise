@@ -3,12 +3,11 @@ package main
 import (
 	"flag"
 
-	"github.com/jtenhave/not-just-noise/audio-service/internal/adapters"
 	"github.com/jtenhave/not-just-noise/audio-service/internal/audio"
 	"github.com/jtenhave/not-just-noise/audio-service/internal/config"
-	"github.com/jtenhave/not-just-noise/lib/database"
+	dispatchClient "github.com/jtenhave/not-just-noise/dispatch-service/client"
+	"github.com/jtenhave/not-just-noise/integrations/mysql"
 	"github.com/jtenhave/not-just-noise/lib/http"
-	"github.com/jtenhave/not-just-noise/lib/transactionaljob"
 )
 
 func main() {
@@ -22,7 +21,13 @@ func main() {
 	}
 
 	// Create MySQL connection
-	mysql, err := database.NewMySQLConnection(config.MySQL)
+	mysql, err := mysql.NewMySQLConnection(mysql.MySQLConfig{
+		Host:     config.MySQL.Host,
+		Port:     config.MySQL.Port,
+		User:     config.MySQL.User,
+		Password: config.MySQL.Password,
+		DBName:   config.MySQL.DBName,
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -30,14 +35,11 @@ func main() {
 	// Create audio repository
 	audioRepo := audio.NewAudioRepo(mysql)
 
-	// Create transactional job client
-	transactionalJobClient := transactionaljob.NewTransactionalJobClient(mysql)
-
-	// Create audio publish adapter
-	audioPublishAdapter := adapters.NewPublishAdapter(config.SNS, transactionalJobClient)
+	// Create dispatch client
+	dispatchClient := dispatchClient.NewDispatchClient(mysql)
 
 	// Create audio service
-	audioService := audio.NewAudioService(mysql, audioRepo, audioPublishAdapter)
+	audioService := audio.NewAudioService(mysql, audioRepo, dispatchClient, config.SNS.TopicArn)
 
 	// Create audio routes
 	audioRoutes := audio.CreateRoutes(audioService)
