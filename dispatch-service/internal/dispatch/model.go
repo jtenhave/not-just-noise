@@ -1,8 +1,8 @@
-package transactionaljob
+package dispatch
 
 import "time"
 
-type TransactionalJob struct {
+type Dispatch struct {
 	ID               string
 	CallbackType     string
 	CallbackResource string

@@ -1,8 +1,8 @@
-CREATE DATABASE IF NOT EXISTS transactional_job_service
+CREATE DATABASE IF NOT EXISTS dispatch_service
 CHARACTER SET utf8mb4 
 COLLATE utf8mb4_unicode_ci;
 
-CREATE TABLE transactional_jobs (
+CREATE TABLE dispatches (
     id VARCHAR(128) NOT NULL,
     callback_type VARCHAR(32) NOT NULL,
     callback_resource VARCHAR(2048) NOT NULL,

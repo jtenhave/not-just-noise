@@ -1,0 +1,15 @@
+{
+    "mysql": {
+        "host": "njn-mysql-db.c01ycuu8si9t.us-east-1.rds.amazonaws.com",
+        "port": 3306,
+        "db_name": "dispatch_service",
+        "user": "${DB_USER}",
+        "password": "${DB_PASSWORD}"
+    },
+    "worker": {
+        "max_workers": 10,
+        "max_batch_size": 100,
+        "no_job_delay": 10,
+        "job_buffer_size": 1000
+    }
+}

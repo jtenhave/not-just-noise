@@ -1,4 +1,4 @@
-package transactionaljob
+package dispatch
 
 import (
 	"context"
@@ -39,20 +39,20 @@ func (m *mockDB) IsTx(ctx context.Context) bool {
 	return arguments.Get(0).(bool)
 }
 
-func TestTransactionalJobRepo_GetAvailableTransactionalJobs_NotInTx(t *testing.T) {
+func TestDispatchRepo_GetAvailableDispatches_NotInTx(t *testing.T) {
 	db := new(mockDB)
-	repo := NewTransactionalJobRepo(db)
+	repo := NewDispatchRepo(db)
 
 	db.On("IsTx", mock.Anything).Return(false)
 
-	_, err := repo.GetAvailableTransactionalJobs(context.Background(), 10)
+	_, err := repo.GetAvailableDispatches(context.Background(), 10)
 
 	assert.Error(t, err)
 }
 
-func TestTransactionalJobRepo_GetAvailableTransactionalJobs_Success(t *testing.T) {
+func TestDispatchRepo_GetAvailableDispatches_Success(t *testing.T) {
 	db := new(mockDB)
-	repo := NewTransactionalJobRepo(db)
+	repo := NewDispatchRepo(db)
 
 	expectedValues := []map[string]any{
 		{
@@ -66,10 +66,10 @@ func TestTransactionalJobRepo_GetAvailableTransactionalJobs_Success(t *testing.T
 	db.On("IsTx", mock.Anything).Return(true)
 	db.On("QueryContext", mock.Anything, mock.Anything, mock.Anything).Return(expectedValues, nil)
 
-	transactionalJobs, err := repo.GetAvailableTransactionalJobs(context.Background(), 10)
+	dispatches, err := repo.GetAvailableDispatches(context.Background(), 10)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(transactionalJobs))
-	assert.Equal(t, "notify", transactionalJobs[0].CallbackType)
-	assert.Equal(t, "https://test.com/callback", transactionalJobs[0].CallbackResource)
-	assert.Equal(t, "payload", transactionalJobs[0].Payload)
+	assert.Equal(t, 1, len(dispatches))
+	assert.Equal(t, "notify", dispatches[0].CallbackType)
+	assert.Equal(t, "https://test.com/callback", dispatches[0].CallbackResource)
+	assert.Equal(t, "payload", dispatches[0].Payload)
 }
