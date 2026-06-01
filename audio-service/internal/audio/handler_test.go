@@ -1,12 +1,15 @@
 package audio
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/jtenhave/not-just-noise/lib/http"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -71,30 +74,17 @@ func (m *serviceMock) PublishAudio(ctx context.Context, audioPublishEvent AudioP
 func TestAudioHandler_GetAudio_IDIsRequired(t *testing.T) {
 	mockService := new(serviceMock)
 
-	request := http.Request{
-		Context: context.Background(),
-		PathValues: map[string]string{
-			"id": "",
-		},
-		Body: "",
-	}
+	request := http.Request{}
+	responseWriter := httptest.NewRecorder()
 
-	response := getAudioHandler(request, mockService)
+	getAudioHandler(&request, responseWriter, mockService)
 
-	assert.Equal(t, 400, response.Code)
+	assert.Equal(t, 400, responseWriter.Code)
 	mockService.AssertNotCalled(t, "GetAudio")
 }
 
 func TestAudioHandler_GetAudio_Success(t *testing.T) {
 	mockService := new(serviceMock)
-
-	request := http.Request{
-		Context: context.Background(),
-		PathValues: map[string]string{
-			"id": "123",
-		},
-		Body: "",
-	}
 
 	title := "Test Title"
 	fileURL := "https://test.com/test.mp3"
@@ -107,12 +97,18 @@ func TestAudioHandler_GetAudio_Success(t *testing.T) {
 
 	mockService.On("GetAudio", context.Background(), "123").Return(expectedAudio, nil)
 
-	response := getAudioHandler(request, mockService)
+	request := http.Request{}
+	request.SetPathValue("id", "123")
+	responseWriter := httptest.NewRecorder()
 
-	assert.Equal(t, 200, response.Code)
+	getAudioHandler(&request, responseWriter, mockService)
+
+	assert.Equal(t, 200, responseWriter.Code)
+
+	responseBody := responseWriter.Body.String()
 
 	body := AudioResponse{}
-	err := json.Unmarshal([]byte(*response.Body), &body)
+	err := json.Unmarshal([]byte(responseBody), &body)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal response body: %v", err)
 	}
@@ -190,20 +186,16 @@ func TestAudioHandler_CreateAudio_Success(t *testing.T) {
 
 	mockService.On("CreateAudio", context.Background(), requestBody.ToAudio()).Return("123", nil)
 
-	request := http.Request{
-		Context: context.Background(),
-		PathValues: map[string]string{
-			"id": "123",
-		},
-		Body: string(requestBodyJSON),
-	}
+	request := http.Request{}
+	request.Body = io.NopCloser(bytes.NewReader(requestBodyJSON))
+	responseWriter := httptest.NewRecorder()
 
-	response := createAudioHandler(request, mockService)
+	createAudioHandler(&request, responseWriter, mockService)
 
-	assert.Equal(t, 200, response.Code)
+	assert.Equal(t, 200, responseWriter.Code)
 
 	body := CreateAudioResponse{}
-	err = json.Unmarshal([]byte(*response.Body), &body)
+	err = json.Unmarshal(responseWriter.Body.Bytes(), &body)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal response body: %v", err)
 	}
@@ -213,18 +205,15 @@ func TestAudioHandler_CreateAudio_Success(t *testing.T) {
 
 func TestAudioHandler_UpdateAudio_IDIsRequired(t *testing.T) {
 	mockService := new(serviceMock)
-	request := http.Request{
-		Context: context.Background(),
-		PathValues: map[string]string{
-			"id": "",
-		},
-		Body: "",
-	}
 
-	response := updateAudioHandler(request, mockService)
+	request := http.Request{}
+	request.SetPathValue("id", "")
+	responseWriter := httptest.NewRecorder()
 
-	assert.Equal(t, 400, response.Code)
-	assert.True(t, strings.Contains(*response.Body, idIsRequired))
+	updateAudioHandler(&request, responseWriter, mockService)
+
+	assert.Equal(t, 400, responseWriter.Code)
+	assert.True(t, strings.Contains(responseWriter.Body.String(), idIsRequired))
 	mockService.AssertNotCalled(t, "UpdateAudio")
 }
 
@@ -267,16 +256,12 @@ func TestAudioHandler_UpdateAudio_FileURLIsNotValid(t *testing.T) {
 func TestAudioHandler_DeleteAudio_IDIsRequired(t *testing.T) {
 	mockService := new(serviceMock)
 
-	request := http.Request{
-		Context: context.Background(),
-		PathValues: map[string]string{
-			"id": "",
-		},
-		Body: "",
-	}
+	request := http.Request{}
+	request.SetPathValue("id", "")
+	responseWriter := httptest.NewRecorder()
 
-	response := deleteAudioHandler(request, mockService)
+	deleteAudioHandler(&request, responseWriter, mockService)
 
-	assert.Equal(t, 400, response.Code)
+	assert.Equal(t, 400, responseWriter.Code)
 	mockService.AssertNotCalled(t, "DeleteAudio")
 }

@@ -1,11 +1,30 @@
 package http
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
-	"regexp"
+
+	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
+
+const (
+	UnknownError        = 0
+	Ok                  = 200
+	NoContent           = 204
+	BadRequest          = 400
+	NotFound            = 404
+	Conflict            = 409
+	InternalServerError = 500
+)
+
+type Route struct {
+	Method  string
+	Path    string
+	Handler func(request *http.Request, response http.ResponseWriter)
+}
 
 // StartServer starts the server using the given routes and port.
 func StartServer(routes []Route, port int) error {
@@ -14,11 +33,8 @@ func StartServer(routes []Route, port int) error {
 	routes = append(routes, Route{
 		Method: "GET",
 		Path:   "/health",
-		Handler: func(request Request) Response {
-			return Response{
-				Code: 204,
-				Body: nil,
-			}
+		Handler: func(request *http.Request, response http.ResponseWriter) {
+			response.WriteHeader(204)
 		},
 	})
 
@@ -26,19 +42,7 @@ func StartServer(routes []Route, port int) error {
 	for _, route := range routes {
 		pattern := route.Method + " " + route.Path
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-			body, err := deserializeBody(r.Body)
-			if err != nil {
-				panic(err)
-			}
-
-			request := Request{
-				Context:    r.Context(),
-				PathValues: extractPathValues(route.Path, r),
-				Body:       body,
-			}
-
-			response := route.Handler(request)
-			sendResponse(response, w)
+			route.Handler(r, w)
 		})
 
 		fmt.Printf("%s\n", pattern)
@@ -48,38 +52,63 @@ func StartServer(routes []Route, port int) error {
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
 }
 
-// extractPathValues extracts values from a path template using a given request
-func extractPathValues(path string, request *http.Request) map[string]string {
-	re := regexp.MustCompile(`\{([^}]+)\}`)
-	matches := re.FindAllStringSubmatch(path, -1)
+func responseCodeFromError(err error) int {
+	errorType := njnerror.Type(err)
+	code := InternalServerError
 
-	routePathValues := make(map[string]string)
-	for _, match := range matches {
-		routePathValues[match[1]] = request.PathValue(match[1])
+	switch errorType {
+	case njnerror.BadRequest:
+		code = BadRequest
+	case njnerror.NotFound:
+		code = NotFound
+	case njnerror.Conflict:
+		code = Conflict
 	}
 
-	return routePathValues
+	return code
 }
 
-// deserializeBody deserializes a request body into a given bodyType
-func deserializeBody(body io.Reader) (string, error) {
-	rawBody, err := io.ReadAll(body)
+func SendErrorResponse(w http.ResponseWriter, err error) {
+	code := responseCodeFromError(err)
+	body := map[string]string{
+		"error": err.Error(),
+	}
+
+	SendJsonResponse(w, code, &body)
+}
+
+func SendJsonResponse(w http.ResponseWriter, code int, body interface{}) {
+	bodyBytes, err := json.Marshal(body)
 	if err != nil {
-		return "", fmt.Errorf("libhttp.deserializeBody: failed to read request body: %w", err)
+		log.Printf("libhttp.server.SendJsonResponse: failed to marshal body: %v, error: %v", body, err)
+		SendResponse(w, code, nil)
+		return
 	}
 
-	return string(rawBody), nil
+	w.Header().Set("Content-Type", "application/json")
+	SendResponse(w, code, bodyBytes)
 }
 
-func sendResponse(response Response, w http.ResponseWriter) {
-	for key, value := range response.Headers {
-		w.Header().Set(key, value)
+func SendResponse(w http.ResponseWriter, code int, body []byte) {
+	w.WriteHeader(code)
+	if body != nil {
+		_, err := w.Write(body)
+		if err != nil {
+			log.Printf("libhttp.server.SendResponse: failed to write body: %v, error: %v\n", string(body), err)
+		}
+	}
+}
+
+func ReadAllAndUnmarshal(r io.Reader, v interface{}) error {
+	bodyBytes, err := io.ReadAll(r)
+	if err != nil {
+		return fmt.Errorf("libhttp.server.ReadAllAndUnmarshal: failed to read all bytes from request: %v", err)
 	}
 
-	if response.Body != nil {
-		w.WriteHeader(response.Code)
-		w.Write([]byte(*response.Body))
-	} else {
-		w.WriteHeader(response.Code)
+	err = json.Unmarshal(bodyBytes, v)
+	if err != nil {
+		return fmt.Errorf("libhttp.server.ReadAllAndUnmarshal: failed to unmarshal: %v", err)
 	}
+
+	return nil
 }

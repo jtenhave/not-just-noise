@@ -2,13 +2,13 @@ package audio
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/jtenhave/not-just-noise/lib/http"
+	njnHttp "github.com/jtenhave/not-just-noise/lib/http"
 	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
@@ -20,14 +20,12 @@ type AudioService interface {
 }
 
 const (
-	idIsRequired        = "id is required"
-	titleIsRequired     = "title is required"
-	creatorIsRequired   = "creator is required"
-	fileURLIsRequired   = "file_url is required"
-	fileURLIsNotValid   = "file_url is not a valid URL"
-	eventTypeIsRequired = "event_type is required"
-	eventTypeIsNotValid = "event_type is not a valid event type"
-	failedToUnmarshal   = "failed to unmarshal"
+	idIsRequired      = "id is required"
+	titleIsRequired   = "title is required"
+	creatorIsRequired = "creator is required"
+	fileURLIsRequired = "file_url is required"
+	fileURLIsNotValid = "file_url is not a valid URL"
+	failedToUnmarshal = "failed to unmarshal"
 )
 
 type ErrorResponseBody struct {
@@ -35,36 +33,36 @@ type ErrorResponseBody struct {
 }
 
 // CreateRoutes creates the routes using the given audioService.
-func CreateRoutes(audioService AudioService) []http.Route {
-	return []http.Route{
+func CreateRoutes(audioService AudioService) []njnHttp.Route {
+	return []njnHttp.Route{
 
 		{
 			Method: "GET",
 			Path:   "/audio/{id}",
-			Handler: func(request http.Request) http.Response {
-				return getAudioHandler(request, audioService)
+			Handler: func(request *http.Request, responseWriter http.ResponseWriter) {
+				getAudioHandler(request, responseWriter, audioService)
 			},
 		},
 		{
 			Method: "POST",
 			Path:   "/audio",
-			Handler: func(request http.Request) http.Response {
-				return createAudioHandler(request, audioService)
+			Handler: func(request *http.Request, responseWriter http.ResponseWriter) {
+				createAudioHandler(request, responseWriter, audioService)
 			},
 		},
 
 		{
 			Method: "PATCH",
 			Path:   "/audio/{id}",
-			Handler: func(request http.Request) http.Response {
-				return updateAudioHandler(request, audioService)
+			Handler: func(request *http.Request, responseWriter http.ResponseWriter) {
+				updateAudioHandler(request, responseWriter, audioService)
 			},
 		},
 		{
 			Method: "DELETE",
 			Path:   "/audio/{id}",
-			Handler: func(request http.Request) http.Response {
-				return deleteAudioHandler(request, audioService)
+			Handler: func(request *http.Request, responseWriter http.ResponseWriter) {
+				deleteAudioHandler(request, responseWriter, audioService)
 			},
 		},
 	}
@@ -96,18 +94,20 @@ func toAudioResponse(audio Audio) AudioResponse {
 }
 
 // getAudioHandler handles the GET /audio/{id} request, using the given audioService.
-func getAudioHandler(request http.Request, audioService AudioService) http.Response {
-	id := request.PathValues["id"]
+func getAudioHandler(request *http.Request, responseWriter http.ResponseWriter, audioService AudioService) {
+	id := request.PathValue("id")
 	if id == "" {
-		return createErrorResponse(njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.getAudioHandler: %s", idIsRequired)))
+		njnHttp.SendErrorResponse(responseWriter, njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.getAudioHandler: %s", idIsRequired)))
+		return
 	}
 
-	audio, err := audioService.GetAudio(request.Context, id)
+	audio, err := audioService.GetAudio(request.Context(), id)
 	if err != nil {
-		return createErrorResponse(njnerror.Wrapf("audiohandler.getAudioHandler: failed to get audio: %w", err))
+		njnHttp.SendErrorResponse(responseWriter, njnerror.Wrapf("audiohandler.getAudioHandler: failed to get audio: %w", err))
+		return
 	}
 
-	return createResponse(200, toAudioResponse(audio))
+	njnHttp.SendJsonResponse(responseWriter, 200, toAudioResponse(audio))
 }
 
 type CreateAudioRequest struct {
@@ -147,28 +147,31 @@ func (createAudioRequest CreateAudioRequest) Validate() []string {
 }
 
 // createAudioHandler handles the POST /audio request, using the given audioService.
-func createAudioHandler(request http.Request, audioService AudioService) http.Response {
+func createAudioHandler(request *http.Request, responseWriter http.ResponseWriter, audioService AudioService) {
 	createAudioRequest := CreateAudioRequest{}
-	err := json.Unmarshal([]byte(request.Body), &createAudioRequest)
+	err := njnHttp.ReadAllAndUnmarshal(request.Body, &createAudioRequest)
 	if err != nil {
-		return createErrorResponse(njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.createAudioHandler: %s create audio request", failedToUnmarshal)))
+		njnHttp.SendErrorResponse(responseWriter, njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.createAudioHandler: %s create audio request", failedToUnmarshal)))
+		return
 	}
 
 	errors := createAudioRequest.Validate()
 	if len(errors) > 0 {
-		return createErrorResponse(njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.createAudioHandler: %s", strings.Join(errors, ", "))))
+		njnHttp.SendErrorResponse(responseWriter, njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.createAudioHandler: %s", strings.Join(errors, ", "))))
+		return
 	}
 
-	id, err := audioService.CreateAudio(request.Context, createAudioRequest.ToAudio())
+	id, err := audioService.CreateAudio(request.Context(), createAudioRequest.ToAudio())
 	if err != nil {
-		return createErrorResponse(njnerror.Wrapf("audiohandler.createAudioHandler: failed to create audio: %w", err))
+		njnHttp.SendErrorResponse(responseWriter, njnerror.Wrapf("audiohandler.createAudioHandler: failed to create audio: %w", err))
+		return
 	}
 
 	response := CreateAudioResponse{
 		ID: id,
 	}
 
-	return createResponse(200, response)
+	njnHttp.SendJsonResponse(responseWriter, 200, response)
 }
 
 type UpdateAudioRequest struct {
@@ -202,83 +205,57 @@ func (updateAudioRequest UpdateAudioRequest) ToAudio() Audio {
 }
 
 // updateAudioHandler handles the PATCH /audio/{id} request, using the given audioService.
-func updateAudioHandler(request http.Request, audioService AudioService) http.Response {
-	id := request.PathValues["id"]
+func updateAudioHandler(request *http.Request, responseWriter http.ResponseWriter, audioService AudioService) {
+	id := request.PathValue("id")
 	if id == "" {
-		return createErrorResponse(njnerror.NewNJNError(njnerror.BadRequest, idIsRequired))
+		njnHttp.SendErrorResponse(responseWriter, njnerror.NewNJNError(njnerror.BadRequest, idIsRequired))
+		return
 	}
 
 	updateAudioRequest := UpdateAudioRequest{}
-	err := json.Unmarshal([]byte(request.Body), &updateAudioRequest)
+	err := njnHttp.ReadAllAndUnmarshal(request.Body, &updateAudioRequest)
 	if err != nil {
-		return createErrorResponse(njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.updateAudioHandler: %s update audio request", failedToUnmarshal)))
+		njnHttp.SendErrorResponse(responseWriter, njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.updateAudioHandler: %s update audio request", failedToUnmarshal)))
+		return
 	}
 
 	errors := updateAudioRequest.Validate()
 	if len(errors) > 0 {
-		return createErrorResponse(njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.updateAudioHandler: %s", strings.Join(errors, ", "))))
+		njnHttp.SendErrorResponse(responseWriter, njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.updateAudioHandler: %s", strings.Join(errors, ", "))))
+		return
 	}
 
 	audio := updateAudioRequest.ToAudio()
 	audio.ID = id
 
-	err = audioService.UpdateAudio(request.Context, audio)
+	err = audioService.UpdateAudio(request.Context(), audio)
 	if err != nil {
-		return createErrorResponse(njnerror.Wrapf("audiohandler.updateAudioHandler: failed to update audio: %w", err))
+		njnHttp.SendErrorResponse(responseWriter, njnerror.Wrapf("audiohandler.updateAudioHandler: failed to update audio: %w", err))
+		return
 	}
 
-	return createResponse(204, nil)
+	njnHttp.SendJsonResponse(responseWriter, 204, nil)
 }
 
 // deleteAudioHandler handles the DELETE /audio/{id} request, using the given audioService.
-func deleteAudioHandler(request http.Request, audioService AudioService) http.Response {
-	id := request.PathValues["id"]
+func deleteAudioHandler(request *http.Request, responseWriter http.ResponseWriter, audioService AudioService) {
+	id := request.PathValue("id")
 	if id == "" {
-		return createErrorResponse(njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.deleteAudioHandler: %s", idIsRequired)))
+		njnHttp.SendErrorResponse(responseWriter, njnerror.NewNJNError(njnerror.BadRequest, fmt.Sprintf("audiohandler.deleteAudioHandler: %s", idIsRequired)))
+		return
 	}
 
-	err := audioService.DeleteAudio(request.Context, id)
+	err := audioService.DeleteAudio(request.Context(), id)
 	if err != nil {
-		return createErrorResponse(njnerror.Wrapf("audiohandler.deleteAudioHandler: failed to delete audio: %w", err))
+		njnHttp.SendErrorResponse(responseWriter, njnerror.Wrapf("audiohandler.deleteAudioHandler: failed to delete audio: %w", err))
+		return
 	}
 
-	return createResponse(204, nil)
+	njnHttp.SendJsonResponse(responseWriter, 204, nil)
 }
 
 // isValidURL checks if the given str is a valid URL.
 func isValidURL(str string) bool {
 	u, err := url.ParseRequestURI(str)
 	return err == nil && u.Scheme != "" && u.Host != ""
-}
-
-// createResponse creates a new http response with the given code and body.
-func createResponse(code int, body interface{}) http.Response {
-	headers := map[string]string{}
-	var bodyRaw *string
-	if body != nil {
-		headers["Content-Type"] = "application/json"
-		bodyBytes, err := json.Marshal(body)
-		if err != nil {
-			bodyBytes = []byte(err.Error())
-			headers["Content-Type"] = "text/plain"
-		}
-
-		bodyStr := string(bodyBytes)
-		bodyRaw = &bodyStr
-	}
-
-	return http.Response{
-		Code:    code,
-		Body:    bodyRaw,
-		Headers: headers,
-	}
-}
-
-// createErrorResponse creates a new http response with the given error.
-func createErrorResponse(err error) http.Response {
-	body := ErrorResponseBody{
-		Error: err.Error(),
-	}
-
-	return createResponse(http.ResponseCodeFromError(err), body)
 }
