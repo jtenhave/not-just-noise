@@ -5,12 +5,14 @@ import (
 
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	awsSNS "github.com/aws/aws-sdk-go-v2/service/sns"
+	awsSQS "github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/jtenhave/not-just-noise/dispatch-service/internal/config"
 	"github.com/jtenhave/not-just-noise/dispatch-service/internal/dispatch"
 	transactionaljob "github.com/jtenhave/not-just-noise/dispatch-service/internal/dispatch"
 	"github.com/jtenhave/not-just-noise/dispatch-service/internal/dispatcher"
 	"github.com/jtenhave/not-just-noise/integrations/mysql"
 	"github.com/jtenhave/not-just-noise/integrations/sns"
+	"github.com/jtenhave/not-just-noise/integrations/sqs"
 )
 
 func main() {
@@ -50,12 +52,22 @@ func main() {
 	// Create notify dispatch handler
 	notifyDispatchHandler := dispatcher.NewNotifyDispatcher(snsClient)
 
-    // Create log dispatch handler
+	// Create AWS SQS client
+	awsSQSClient := awsSQS.NewFromConfig(awsConfig)
+
+	// Create SQS client
+	sqsClient := sqs.NewSQSClient(awsSQSClient)
+
+	// Create queue dispatch handler
+	queueDispatchHandler := dispatcher.NewQueueDispatcher(sqsClient)
+
+	// Create log dispatch handler
 	logDispatchHandler := dispatcher.NewLogDispatcher()
 
 	// Create dispatcher
 	dsptchr := dispatcher.NewDispatcher()
 	dsptchr.RegisterDispatcher(dispatcher.DispatcherTypeNotify, notifyDispatchHandler)
+	dsptchr.RegisterDispatcher(dispatcher.DispatcherTypeQueue, queueDispatchHandler)
 	dsptchr.RegisterDispatcher(dispatcher.DispatcherTypeLog, logDispatchHandler)
 
 	// Create transactional job service

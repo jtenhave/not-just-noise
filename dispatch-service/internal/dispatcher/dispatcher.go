@@ -8,8 +8,8 @@ import (
 const (
 	DispatcherTypeLog    = "log"
 	DispatcherTypeNotify = "notify"
+	DispatcherTypeQueue  = "queue"
 )
-
 
 type DispatcherHandler interface {
 	Dispatch(ctx context.Context, destination string, payload string) error
