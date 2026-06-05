@@ -21,12 +21,13 @@ func NewS3Client(client *s3.Client, bucket string) *s3client {
 	}
 }
 
-func (c *s3client) UploadFile(ctx context.Context, key string, body io.Reader, metadata map[string]string) error {
+func (c *s3client) UploadFile(ctx context.Context, key string, body io.Reader, fileSize int64, metadata map[string]string) error {
 	_, err := c.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:   aws.String(c.bucket),
-		Key:      aws.String(key),
-		Body:     body,
-		Metadata: metadata,
+		Bucket:        aws.String(c.bucket),
+		Key:           aws.String(key),
+		Body:          body,
+		Metadata:      metadata,
+		ContentLength: aws.Int64(fileSize),
 	})
 
 	if err != nil {

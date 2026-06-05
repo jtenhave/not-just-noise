@@ -171,6 +171,19 @@ func TestAudioHandler_CreateAudio_FileURLIsValid(t *testing.T) {
 	assert.Equal(t, fileURLIsNotValid, errors[0])
 }
 
+func TestAudioHandler_CreateAudio_FileExtensionIsNotValid(t *testing.T) {
+	requestBody := CreateAudioRequest{
+		Title:     "Test Title",
+		CreatorID: "123",
+		FileURL:   "https://test.com/test.wav",
+	}
+	
+	errors := requestBody.Validate()
+
+	assert.Equal(t, 1, len(errors))
+	assert.Equal(t, fileExtensionIsNotValid, errors[0])
+}
+
 func TestAudioHandler_CreateAudio_Success(t *testing.T) {
 	mockService := new(serviceMock)
 	requestBody := CreateAudioRequest{

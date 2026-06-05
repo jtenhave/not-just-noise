@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jtenhave/not-just-noise/contracts/dispatch"
 	"github.com/jtenhave/not-just-noise/lib/njnerror"
@@ -30,10 +31,37 @@ func (client *dispatchClient) Dispatch(ctx context.Context, dispatch dispatch.Di
 		return fmt.Errorf("dispatchClient.Dispatch: not in a transaction")
 	}
 
-	_, err := client.db.ExecContext(ctx,
-		`INSERT INTO transactional_job_service.transactional_jobs (id, callback_type, callback_resource, payload, claim_timeout, retry_seconds, retry_backoff, max_attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		dispatch.ID, dispatch.CallbackType, dispatch.CallbackResource, dispatch.Payload, dispatch.ClaimTimeout, dispatch.RetrySeconds, dispatch.RetryBackoff, dispatch.MaxAttempts)
+	insertColumns := []string{"id", "callback_type", "callback_resource", "payload"}
+	insertPlaceholders := []string{"?", "?", "?", "?"}
+	insertValues := []any{dispatch.ID, dispatch.CallbackType, dispatch.CallbackResource, dispatch.Payload}
 
+	if dispatch.ClaimTimeout != nil {
+		insertColumns = append(insertColumns, "claim_timeout")
+		insertPlaceholders = append(insertPlaceholders, "?")
+		insertValues = append(insertValues, *dispatch.ClaimTimeout)
+	}
+
+	if dispatch.RetrySeconds != nil {
+		insertColumns = append(insertColumns, "retry_seconds")
+		insertPlaceholders = append(insertPlaceholders, "?")
+		insertValues = append(insertValues, *dispatch.RetrySeconds)
+	}
+
+	if dispatch.RetryBackoff != nil {
+		insertColumns = append(insertColumns, "retry_backoff")
+		insertPlaceholders = append(insertPlaceholders, "?")
+		insertValues = append(insertValues, *dispatch.RetryBackoff)
+	}
+
+	if dispatch.MaxAttempts != nil {
+		insertColumns = append(insertColumns, "max_attempts")
+		insertPlaceholders = append(insertPlaceholders, "?")
+		insertValues = append(insertValues, *dispatch.MaxAttempts)
+	}
+
+	query := fmt.Sprintf(`INSERT INTO dispatch_service.dispatches (%s) VALUES (%s)`, strings.Join(insertColumns, ", "), strings.Join(insertPlaceholders, ", "))
+
+	_, err := client.db.ExecContext(ctx, query, insertValues...)
 	if err != nil {
 		return njnerror.Wrapf("dispatchClient.Dispatch: failed to dispatch: %w", err)
 	}

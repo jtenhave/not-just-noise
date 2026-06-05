@@ -20,12 +20,13 @@ type AudioService interface {
 }
 
 const (
-	idIsRequired      = "id is required"
-	titleIsRequired   = "title is required"
-	creatorIsRequired = "creator is required"
-	fileURLIsRequired = "file_url is required"
-	fileURLIsNotValid = "file_url is not a valid URL"
-	failedToUnmarshal = "failed to unmarshal"
+	idIsRequired            = "id is required"
+	titleIsRequired         = "title is required"
+	creatorIsRequired       = "creator is required"
+	fileURLIsRequired       = "file_url is required"
+	fileURLIsNotValid       = "file_url is not a valid URL"
+	fileExtensionIsNotValid = "file_url must have a .mp3 extension"
+	failedToUnmarshal       = "failed to unmarshal"
 )
 
 type ErrorResponseBody struct {
@@ -142,6 +143,8 @@ func (createAudioRequest CreateAudioRequest) Validate() []string {
 		errors = append(errors, fileURLIsRequired)
 	} else if !isValidURL(createAudioRequest.FileURL) {
 		errors = append(errors, fileURLIsNotValid)
+	} else if !isValidFileExtension(createAudioRequest.FileURL) {
+		errors = append(errors, fileExtensionIsNotValid)
 	}
 	return errors
 }
@@ -258,4 +261,8 @@ func deleteAudioHandler(request *http.Request, responseWriter http.ResponseWrite
 func isValidURL(str string) bool {
 	u, err := url.ParseRequestURI(str)
 	return err == nil && u.Scheme != "" && u.Host != ""
+}
+
+func isValidFileExtension(str string) bool {
+	return strings.HasSuffix(str, ".mp3")
 }

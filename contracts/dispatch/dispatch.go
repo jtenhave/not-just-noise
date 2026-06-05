@@ -13,8 +13,8 @@ type Dispatch struct {
 	CallbackType     CallbackType
 	CallbackResource string
 	Payload          string
-	ClaimTimeout     int
-	RetrySeconds     int
-	RetryBackoff     float64
-	MaxAttempts      int
+	ClaimTimeout     *int
+	RetrySeconds     *int
+	RetryBackoff     *float64
+	MaxAttempts      *int
 }
