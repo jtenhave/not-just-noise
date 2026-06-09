@@ -8,11 +8,11 @@ import (
 	awsSQS "github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/jtenhave/not-just-noise/dispatch-service/internal/config"
 	"github.com/jtenhave/not-just-noise/dispatch-service/internal/dispatch"
-	transactionaljob "github.com/jtenhave/not-just-noise/dispatch-service/internal/dispatch"
 	"github.com/jtenhave/not-just-noise/dispatch-service/internal/dispatcher"
 	"github.com/jtenhave/not-just-noise/integrations/mysql"
 	"github.com/jtenhave/not-just-noise/integrations/sns"
 	"github.com/jtenhave/not-just-noise/integrations/sqs"
+	"github.com/jtenhave/not-just-noise/lib/log"
 )
 
 func main() {
@@ -21,6 +21,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	// Create logger
+	ctx := log.SetupLogger(context.Background())
 
 	// Create MySQL connection
 	mysql, err := mysql.NewMySQLConnection(mysql.MySQLConfig{
@@ -70,16 +73,16 @@ func main() {
 	dsptchr.RegisterDispatcher(dispatcher.DispatcherTypeQueue, queueDispatchHandler)
 	dsptchr.RegisterDispatcher(dispatcher.DispatcherTypeLog, logDispatchHandler)
 
-	// Create transactional job service
+	// Create dispatch service
 	dispatchService := dispatch.NewDispatchService(mysql, dispatchRepo, dsptchr)
 
-	transactionalJobWorker := transactionaljob.NewDispatchWorker(transactionaljob.WorkerConfig{
+	dispatchWorker := dispatch.NewDispatchWorker(dispatch.WorkerConfig{
 		MaxWorkers:    config.Worker.MaxWorkers,
 		MaxBatchSize:  config.Worker.MaxBatchSize,
 		NoJobDelay:    config.Worker.NoJobDelay,
 		JobBufferSize: config.Worker.JobBufferSize,
 	}, dispatchService)
 
-	// Start transactional job worker
-	transactionalJobWorker.Start(context.Background())
+	// Start dispatch worker
+	dispatchWorker.Start(ctx)
 }

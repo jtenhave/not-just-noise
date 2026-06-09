@@ -2,7 +2,8 @@ package dispatcher
 
 import (
 	"context"
-	"log"
+
+	"github.com/jtenhave/not-just-noise/lib/log"
 )
 
 type logDispatcher struct {}
@@ -12,6 +13,6 @@ func NewLogDispatcher() *logDispatcher {
 }
 
 func (dispatcher *logDispatcher) Dispatch(ctx context.Context, destination string, payload string) error {
-	log.Printf("dispatcher.logDispatcher.Dispatch: dispatching with destination: %s\n payload: %s\n", destination, payload)
+	log.Logger(ctx).Info("dispatching log message", "payload", payload)
 	return nil
 }

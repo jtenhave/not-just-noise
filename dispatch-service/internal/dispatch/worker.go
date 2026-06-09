@@ -2,9 +2,9 @@ package dispatch
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"time"
+
+	"github.com/jtenhave/not-just-noise/lib/log"
 )
 
 type WorkerConfig struct {
@@ -34,7 +34,7 @@ func NewDispatchWorker(config WorkerConfig, dispatchService DispatchService) dis
 
 // Start starts the dispatchWorker.
 func (worker *dispatchWorker) Start(ctx context.Context) {
-	fmt.Printf("\nstarting transactional job worker\n")
+	log.Logger(ctx).Info("starting dispatcher")
 	worker.work(ctx)
 }
 
@@ -42,16 +42,15 @@ func (worker *dispatchWorker) Start(ctx context.Context) {
 func (worker *dispatchWorker) work(ctx context.Context) {
 	sendChannel := make(chan Dispatch, worker.config.JobBufferSize)
 	for i := 0; i < worker.config.MaxWorkers; i++ {
-		go worker.runWorker(ctx, sendChannel)
+		go worker.runWorker(ctx, i, sendChannel)
 	}
 
 	defer close(sendChannel)
 
 	for {
-		fmt.Printf("getting available dispatches\n")
 		dispatches, err := worker.dispatchService.GetAvailableDispatches(ctx, worker.config.MaxBatchSize)
 		if err != nil {
-			log.Printf("dispatchworker.work: failed to get available dispatches: %v", err)
+			log.Logger(ctx).Error("failed to get available dispatches", "error", err)
 
 			select {
 			case <-ctx.Done():
@@ -61,7 +60,6 @@ func (worker *dispatchWorker) work(ctx context.Context) {
 			continue
 		}
 
-		fmt.Printf("found %d available dispatches\n", len(dispatches))
 		for _, dispatch := range dispatches {
 			select {
 			case <-ctx.Done():
@@ -82,7 +80,7 @@ func (worker *dispatchWorker) work(ctx context.Context) {
 }
 
 // runWorker runs a new worker using the given sendChannel.
-func (worker *dispatchWorker) runWorker(ctx context.Context, sendChannel <-chan Dispatch) {
+func (worker *dispatchWorker) runWorker(ctx context.Context, workerID int, sendChannel <-chan Dispatch) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -92,11 +90,11 @@ func (worker *dispatchWorker) runWorker(ctx context.Context, sendChannel <-chan 
 				return
 			}
 
-			fmt.Printf("sending dispatch: %s\n", dispatch.ID)
-
+			ctx = log.LoggerWithCtx(ctx, "worker_id", workerID, "dispatch_id", dispatch.ID)
 			err := worker.dispatchService.Dispatch(ctx, dispatch)
 			if err != nil {
-				log.Printf("dispatchworker.runWorker: failed to dispatch: %v", err)
+				log.Logger(ctx).Error("failed to dispatch", "error", err)
+				continue
 			}
 		}
 	}

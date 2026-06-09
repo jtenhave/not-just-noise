@@ -3,6 +3,9 @@ package dispatcher
 import (
 	"context"
 	"fmt"
+
+	"github.com/jtenhave/not-just-noise/lib/log"
+	"github.com/jtenhave/not-just-noise/lib/njnerror"
 )
 
 const (
@@ -38,5 +41,13 @@ func (dispatcher *dispatcher) Dispatch(ctx context.Context, dispatcherType strin
 	if dispatcher.handlers[dispatcherType] == nil {
 		return fmt.Errorf("dispatcher.Dispatch: handler not found for dispatcher type: %s", dispatcherType)
 	}
-	return dispatcher.handlers[dispatcherType].Dispatch(ctx, destination, payload)
+
+	log.Logger(ctx).Info("dispatching message", "dispatcher_type", dispatcherType, "destination", destination)
+	
+	err := dispatcher.handlers[dispatcherType].Dispatch(ctx, destination, payload)
+	if err != nil {
+		return njnerror.Wrapf("dispatcher.Dispatch: failed to dispatch message: %w", err)
+	}
+
+	return nil
 }
