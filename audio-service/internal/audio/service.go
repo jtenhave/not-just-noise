@@ -62,7 +62,7 @@ func (audioService audioService) CreateAudio(ctx context.Context, audio Audio) (
 			return njnerror.Wrapf("audioservice.CreateAudio: failed to create audio: %w", err)
 		}
 
-		err = audioService.raiseAudioChangedEvent(ctx, audioContract.AudioChangedEventTypeCreated, audio)
+		err = audioService.raiseAudioChangedEvent(ctx, audioContract.AudioChangedEventTypeCreated, audio, true)
 		if err != nil {
 			return njnerror.Wrapf("audioservice.CreateAudio: failed to raise audio created event: %w", err)
 		}
@@ -88,8 +88,10 @@ func (audioService audioService) UpdateAudio(ctx context.Context, audio Audio) e
 		audioToUpdate.Title = audio.Title
 	}
 
+	fileChanged := false
 	if audio.FileURL != nil {
 		audioToUpdate.FileURL = audio.FileURL
+		fileChanged = true
 	}
 
 	err = audioService.txManager.WithinTx(ctx, func(ctx context.Context) error {
@@ -100,7 +102,7 @@ func (audioService audioService) UpdateAudio(ctx context.Context, audio Audio) e
 
 		audioToUpdate.Version++
 
-		err = audioService.raiseAudioChangedEvent(ctx, audioContract.AudioChangedEventTypeUpdated, audioToUpdate)
+		err = audioService.raiseAudioChangedEvent(ctx, audioContract.AudioChangedEventTypeUpdated, audioToUpdate, fileChanged)
 		if err != nil {
 			return njnerror.Wrapf("audioservice.UpdateAudio: failed to raise audio updated event: %w", err)
 		}
@@ -129,10 +131,10 @@ func (audioService audioService) DeleteAudio(ctx context.Context, id string) err
 		if err != nil {
 			return njnerror.Wrapf("audioservice.DeleteAudio: failed to delete audio: %w", err)
 		}
-		
+
 		audioToDelete.Version = version
 
-		err = audioService.raiseAudioChangedEvent(ctx, audioContract.AudioChangedEventTypeDeleted, audioToDelete)
+		err = audioService.raiseAudioChangedEvent(ctx, audioContract.AudioChangedEventTypeDeleted, audioToDelete, false)
 		if err != nil {
 			return njnerror.Wrapf("audioservice.DeleteAudio: failed to raise audio deleted event: %w", err)
 		}
@@ -147,14 +149,15 @@ func (audioService audioService) DeleteAudio(ctx context.Context, id string) err
 }
 
 // raiseAudioChangedEvent raises a new audio changed event for the given audio and event type. Returns the first error encountered.
-func (audioService *audioService) raiseAudioChangedEvent(ctx context.Context, eventType audioContract.AudioChangedEventType, audio Audio) error {
+func (audioService *audioService) raiseAudioChangedEvent(ctx context.Context, eventType audioContract.AudioChangedEventType, audio Audio, fileChanged bool) error {
 	audioChangedEvent := audioContract.AudioChangedEvent{
-		ID:        audio.ID,
-		Title:     audio.Title,
-		FileURL:   audio.FileURL,
-		Version:   audio.Version,
-		Status:    audio.Status,
-		EventType: eventType,
+		ID:          audio.ID,
+		Title:       audio.Title,
+		FileURL:     audio.FileURL,
+		FileChanged: fileChanged,
+		Version:     audio.Version,
+		Status:      audio.Status,
+		EventType:   eventType,
 	}
 
 	payloadJSON, err := json.Marshal(audioChangedEvent)

@@ -12,5 +12,5 @@ CREATE TABLE audio_service.audio (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`)
-    CONSTRAINT title_unique UNIQUE (creator_id, title)
+    CONSTRAINT title_unique UNIQUE (creator_id, title, (CASE WHEN status = 'active' THEN 1 ELSE NULL END))
 ) ENGINE=INNODB DEFAULT CHARSET=utf8mb4;
